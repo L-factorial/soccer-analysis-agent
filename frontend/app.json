@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "Soccer Analysis Agent",
+    "slug": "soccer-analysis-agent",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "soccer-analysis-agent",
+    "userInterfaceStyle": "automatic",
+    "platforms": ["ios", "android", "web"],
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
+

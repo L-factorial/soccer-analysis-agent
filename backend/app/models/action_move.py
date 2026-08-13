@@ -1,0 +1,16 @@
+from enum import StrEnum
+
+
+class ActionMove(StrEnum):
+    PASS = "PASS"
+    ACCELERATE = "ACCELERATE"
+    DEACCELERATE = "DEACCELERATE"
+    LEFT_CUT = "LEFT_CUT"
+    RIGHT_CUT = "RIGHT_CUT"
+    RUN = "RUN"
+    RECEIVE = "RECEIVE"
+    STOP_THE_BALL = "STOP_THE_BALL"
+    STOP_THE_RUN = "STOP_THE_RUN"
+    PRESS = "PRESS"
+    TURN_LEFT = "TURN_LEFT"
+    TURN_RIGHT = "TURN_RIGHT"
