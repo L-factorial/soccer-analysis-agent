@@ -10,6 +10,7 @@ import {
 import { FieldConfiguration, FieldOrientation } from "../../models";
 import { BallMarker } from "./BallMarker";
 import { FieldSurface } from "./FieldSurface";
+import { GoalMarker } from "./GoalMarker";
 import { OpenSpaceMarker } from "./OpenSpaceMarker";
 import { PlayerMarker } from "./PlayerMarker";
 
@@ -63,6 +64,10 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
           </View>
         )}
 
+        {configuration.goals.map((goal) => (
+          <GoalMarker goal={goal} key={goal.id} orientation={orientation} />
+        ))}
+
         {configuration.openSpaces.map((openSpace) => (
           <OpenSpaceMarker
             fieldSize={fieldSize}
@@ -88,6 +93,10 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
             onMove={onPlayerMove}
             orientation={orientation}
             player={player}
+            team={
+              configuration.teams.find(({ id }) => id === player.teamId) ??
+              configuration.teams[0]
+            }
           />
         ))}
       </FieldSurface>

@@ -2,6 +2,14 @@ import { Position } from "./position";
 
 export const FIELD_LENGTH_CM = 12_000;
 export const FIELD_WIDTH_CM = 9_000;
+export const GOAL_LENGTH_CM = 200;
+export const GOAL_WIDTH_CM = 2_400;
+export const CENTER_CIRCLE_RADIUS_CM = 915;
+export const PENALTY_AREA_DEPTH_CM = 1_650;
+export const PENALTY_AREA_WIDTH_CM = 4_032;
+export const GOAL_AREA_DEPTH_CM = 550;
+export const GOAL_AREA_WIDTH_CM = 1_832;
+export const PENALTY_SPOT_DISTANCE_CM = 1_100;
 
 export type FieldOrientation = "horizontal" | "vertical";
 

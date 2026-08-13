@@ -32,8 +32,6 @@ import {
 } from "../src/models";
 
 const PRESET_MAPS = ["Balanced", "High press", "Build from back"] as const;
-
-type TeamRole = "Offense" | "Defense";
 type SetupMode = "Create new" | "Use preset";
 
 type ChoiceButtonProps = {
@@ -66,7 +64,8 @@ function ChoiceButton({ label, selected, onPress }: ChoiceButtonProps) {
 type DraggablePlayerProps = {
   id: string;
   selected: boolean;
-  role: TeamRole;
+  color: string;
+  number: number;
   placed: boolean;
   onDrop: (id: string, pageX: number, pageY: number) => void;
   onSelect: (id: string) => void;
@@ -74,7 +73,8 @@ type DraggablePlayerProps = {
 
 function DraggablePlayer({
   id,
-  role,
+  color,
+  number,
   placed,
   selected,
   onDrop,
@@ -126,13 +126,12 @@ function DraggablePlayer({
       hitSlop={8}
       style={[
         styles.playerToken,
-        role === "Defense" && styles.playerTokenDefense,
         placed && styles.playerTokenPlaced,
         selected && styles.playerTokenSelected,
-        { transform: translation.getTranslateTransform() },
+        { backgroundColor: color, transform: translation.getTranslateTransform() },
       ]}
     >
-      <Text style={styles.playerTokenText}>{id}</Text>
+      <Text style={styles.playerTokenText}>{number}</Text>
     </Animated.View>
   );
 }
@@ -141,10 +140,10 @@ export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= 900;
   const fieldOrientation: FieldOrientation = isWide ? "horizontal" : "vertical";
-  const [teamRole, setTeamRole] = useState<TeamRole>("Offense");
   const [fieldConfiguration, setFieldConfiguration] = useState(
     createFieldConfiguration("5v5"),
   );
+  const [selectedTeamId, setSelectedTeamId] = useState("team1");
   const [animationResponse, setAnimationResponse] = useState<AnimationResponse>(
     { duration: 10, events: [] },
   );
@@ -159,10 +158,15 @@ export default function HomeScreen() {
   const fieldRef = useRef<View>(null);
   const openSpaceSequence = useRef(1);
   const playerCount = Number.parseInt(fieldConfiguration.fieldType, 10);
-  const playerPrefix = teamRole === "Offense" ? "A" : "D";
+  const selectedTeam =
+    fieldConfiguration.teams.find(({ id }) => id === selectedTeamId) ??
+    fieldConfiguration.teams[0];
   const availablePlayers = Array.from(
     { length: playerCount },
-    (_, index) => `${playerPrefix}${index + 1}`,
+    (_, index) => ({
+      id: `${selectedTeam.id}-${index + 1}`,
+      number: index + 1,
+    }),
   );
   const { pause, play, reset, session } = useAnimationSession(
     fieldConfiguration,
@@ -175,6 +179,7 @@ export default function HomeScreen() {
     setSelectedPlayerId(null);
     setOpenSpaceTool(null);
     setSelectedOpenSpaceId(null);
+    setSelectedTeamId("team1");
     openSpaceSequence.current = 1;
   }
 
@@ -190,7 +195,9 @@ export default function HomeScreen() {
         return;
       }
 
-      const number = Number.parseInt(id.slice(1), 10);
+      const number = Number.parseInt(id.split("-").at(-1) ?? "", 10);
+      const teamId = id.slice(0, id.lastIndexOf("-"));
+      const team = fieldConfiguration.teams.find(({ id }) => id === teamId);
       const position = screenToFieldPosition(
         {
           x: (pageX - x) / width,
@@ -200,9 +207,9 @@ export default function HomeScreen() {
       );
       const player = {
         id,
-        name: id.startsWith("A") ? `Attacker ${number}` : `Defender ${number}`,
+        name: `${team?.name ?? "team"}-${number}`,
         number,
-        team: id.startsWith("A") ? ("attack" as const) : ("defense" as const),
+        teamId,
         position,
         orientation: 0,
       };
@@ -215,7 +222,7 @@ export default function HomeScreen() {
         ],
       }));
     });
-  }, [fieldOrientation]);
+  }, [fieldConfiguration.teams, fieldOrientation]);
 
   const placeBall = useCallback((pageX: number, pageY: number) => {
     fieldRef.current?.measureInWindow((x, y, width, height) => {
@@ -498,15 +505,27 @@ export default function HomeScreen() {
           <View style={styles.configuration}>
             <View style={styles.section}>
               <Text style={styles.sectionNumber}>01</Text>
-              <Text style={styles.sectionLabel}>Team role</Text>
+              <Text style={styles.sectionLabel}>Team</Text>
               <View style={styles.choiceRow}>
-                {(["Offense", "Defense"] as const).map((role) => (
-                  <ChoiceButton
-                    key={role}
-                    label={role}
-                    selected={teamRole === role}
-                    onPress={() => setTeamRole(role)}
-                  />
+                {fieldConfiguration.teams.map((team) => (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: selectedTeamId === team.id }}
+                    key={team.id}
+                    onPress={() => setSelectedTeamId(team.id)}
+                    style={[
+                      styles.teamButton,
+                      selectedTeamId === team.id && styles.teamButtonSelected,
+                    ]}
+                  >
+                    <View style={[styles.teamSwatch, { backgroundColor: team.color }]} />
+                    <View>
+                      <Text style={styles.teamButtonText}>{team.name}</Text>
+                      <Text style={styles.teamGoalText}>
+                        {fieldConfiguration.goals.find(({ id }) => id === team.defendedGoalId)?.name}
+                      </Text>
+                    </View>
+                  </Pressable>
                 ))}
               </View>
             </View>
@@ -533,7 +552,7 @@ export default function HomeScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionNumber}>03</Text>
               <Text style={styles.sectionLabel}>
-                {teamRole === "Offense" ? "Attack" : "Defense"} players
+                {selectedTeam.name} players
               </Text>
               <Text style={styles.sectionHelp}>
                 Select a player, then tap the field
@@ -541,15 +560,16 @@ export default function HomeScreen() {
               <View style={styles.playerTray}>
                 {availablePlayers.map((player) => (
                   <DraggablePlayer
-                    id={player}
-                    key={player}
+                    color={selectedTeam.color}
+                    id={player.id}
+                    key={player.id}
+                    number={player.number}
                     onDrop={placePlayer}
                     onSelect={selectPlayer}
                     placed={fieldConfiguration.players.some(
-                      ({ id }) => id === player,
+                      ({ id }) => id === player.id,
                     )}
-                    role={teamRole}
-                    selected={selectedPlayerId === player}
+                    selected={selectedPlayerId === player.id}
                   />
                 ))}
               </View>
@@ -670,7 +690,7 @@ export default function HomeScreen() {
             <View>
               <Text style={styles.workspaceTitle}>Field workspace</Text>
               <Text style={styles.workspaceSubtitle}>
-                {fieldConfiguration.label} · {teamRole} · {setupMode}
+                {fieldConfiguration.label} · {selectedTeam.name} · {setupMode}
               </Text>
             </View>
             <View style={styles.playbackControls}>
@@ -843,17 +863,13 @@ const styles = StyleSheet.create({
     borderColor: "#8EAA27",
     borderRadius: 19,
     borderWidth: 1,
-    cursor: "grab",
+    cursor: "pointer",
     height: 38,
     justifyContent: "center",
     touchAction: "none",
     userSelect: "none",
     width: 38,
     zIndex: 10,
-  },
-  playerTokenDefense: {
-    backgroundColor: "#FF725E",
-    borderColor: "#B94132",
   },
   playerTokenPlaced: {
     opacity: 0.7,
@@ -868,6 +884,35 @@ const styles = StyleSheet.create({
     color: "#17231D",
     fontSize: 12,
     fontWeight: "800",
+  },
+  teamButton: {
+    alignItems: "center",
+    borderColor: "#DADFD8",
+    borderRadius: 9,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 7,
+    padding: 7,
+  },
+  teamButtonSelected: {
+    backgroundColor: "#F1F5F0",
+    borderColor: "#183E2B",
+  },
+  teamSwatch: {
+    borderColor: "#FFFFFF",
+    borderRadius: 10,
+    borderWidth: 2,
+    height: 20,
+    width: 20,
+  },
+  teamButtonText: {
+    color: "#18251F",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  teamGoalText: {
+    color: "#778079",
+    fontSize: 9,
   },
   deleteButton: {
     alignItems: "center",

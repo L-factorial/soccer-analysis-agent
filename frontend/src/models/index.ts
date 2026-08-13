@@ -3,6 +3,14 @@ export {
   clampFieldPosition,
   FIELD_LENGTH_CM,
   FIELD_WIDTH_CM,
+  GOAL_LENGTH_CM,
+  GOAL_WIDTH_CM,
+  CENTER_CIRCLE_RADIUS_CM,
+  PENALTY_AREA_DEPTH_CM,
+  PENALTY_AREA_WIDTH_CM,
+  GOAL_AREA_DEPTH_CM,
+  GOAL_AREA_WIDTH_CM,
+  PENALTY_SPOT_DISTANCE_CM,
   fieldToScreenPosition,
   screenDeltaToFieldDelta,
   screenToFieldPosition,
@@ -45,5 +53,7 @@ export type {
   OpenSpaceType,
   RectangularOpenSpace,
 } from "./open-space";
-export type { Player, PlayerTeam } from "./player";
+export type { Player } from "./player";
+export type { Team } from "./team";
 export type { Position } from "./position";
+export type { Goal, GoalSide } from "./goal";

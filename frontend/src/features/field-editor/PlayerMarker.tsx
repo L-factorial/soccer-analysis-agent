@@ -11,10 +11,12 @@ import {
   fieldToScreenPosition,
   FieldOrientation,
   Player,
+  Team,
 } from "../../models";
 
 type PlayerMarkerProps = {
   player: Player;
+  team: Team;
   orientation: FieldOrientation;
   onMove?: (id: string, pageX: number, pageY: number) => void;
 };
@@ -22,6 +24,7 @@ type PlayerMarkerProps = {
 export function PlayerMarker({
   orientation,
   player,
+  team,
   onMove,
 }: PlayerMarkerProps) {
   const screenPosition = fieldToScreenPosition(player.position, orientation);
@@ -61,12 +64,12 @@ export function PlayerMarker({
   return (
     <Animated.View
       {...panResponder.panHandlers}
-      accessibilityLabel={`${player.team} player ${player.number}`}
+      accessibilityLabel={`${team.name} player ${player.number}`}
       hitSlop={8}
       style={[
         styles.marker,
-        player.team === "defense" && styles.defenseMarker,
         {
+          backgroundColor: team.color,
           left: `${screenPosition.x * 100}%`,
           top: `${screenPosition.y * 100}%`,
           transform: [
@@ -76,7 +79,7 @@ export function PlayerMarker({
         },
       ]}
     >
-      <Text style={styles.label}>{player.id}</Text>
+      <Text style={styles.label}>{player.number}</Text>
     </Animated.View>
   );
 }
@@ -88,7 +91,7 @@ const styles = StyleSheet.create({
     borderColor: "#FFFFFF",
     borderRadius: 20,
     borderWidth: 2,
-    cursor: "grab",
+    cursor: "pointer",
     height: 40,
     justifyContent: "center",
     marginLeft: -20,
@@ -98,9 +101,6 @@ const styles = StyleSheet.create({
     userSelect: "none",
     width: 40,
     zIndex: 3,
-  },
-  defenseMarker: {
-    backgroundColor: "#FF725E",
   },
   label: {
     color: "#152219",
