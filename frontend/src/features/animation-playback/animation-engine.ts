@@ -28,6 +28,75 @@ function orientationToward(from: Position, to: Position): number {
   return (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI;
 }
 
+function normalizeOrientation(orientation: number): number {
+  return ((orientation % 360) + 360) % 360;
+}
+
+function smoothStep(progress: number): number {
+  return progress * progress * (3 - 2 * progress);
+}
+
+function easedFrameStep(
+  event: AnimationEvent,
+  currentFrame: number,
+): number {
+  const startFrame = secondsToAnimationFrame(event.startTime);
+  const endFrame = secondsToAnimationFrame(
+    event.startTime + (event.duration ?? 0),
+  );
+  const totalFrames = Math.max(1, endFrame - startFrame);
+  const previousProgress = Math.min(
+    1,
+    Math.max(0, (currentFrame - startFrame - 1) / totalFrames),
+  );
+  const currentProgress = Math.min(
+    1,
+    Math.max(0, (currentFrame - startFrame) / totalFrames),
+  );
+  // Retaining some linear motion avoids a full stop when consecutive phase
+  // movements meet, while smoothstep supplies visible acceleration/deceleration.
+  const linearWeight = 0.35;
+  const eased = (progress: number) =>
+    linearWeight * progress + (1 - linearWeight) * smoothStep(progress);
+  const previousEased = eased(previousProgress);
+  const currentEased = eased(currentProgress);
+  return Math.min(
+    1,
+    Math.max(0, (currentEased - previousEased) / (1 - previousEased)),
+  );
+}
+
+function updatePlayerOrientation(
+  configuration: FieldConfiguration,
+  playerId: string,
+  targetOrientation: number,
+  frameStep: number,
+): FieldConfiguration {
+  return {
+    ...configuration,
+    players: configuration.players.map((player) => {
+      if (player.id !== playerId) {
+        return player;
+      }
+      const current = normalizeOrientation(player.orientation);
+      const target = normalizeOrientation(targetOrientation);
+      const clockwiseDifference = (target - current + 360) % 360;
+      const difference =
+        clockwiseDifference <= 180
+          ? clockwiseDifference
+          : clockwiseDifference - 360;
+
+      return {
+        ...player,
+        orientation: normalizeOrientation(
+          current + difference * frameStep,
+        ),
+        velocity: { x: 0, y: 0 },
+      };
+    }),
+  };
+}
+
 function moveToward(
   from: Position,
   target: Position,
@@ -65,7 +134,7 @@ function updatePlayer(
   configuration: FieldConfiguration,
   playerId: string,
   target: Position,
-  remainingFrames: number,
+  frameStep: number,
 ): FieldConfiguration {
   return {
     ...configuration,
@@ -79,7 +148,7 @@ function updatePlayer(
         safeTarget.x - player.position.x,
         safeTarget.y - player.position.y,
       );
-      const distancePerFrame = remainingDistance / Math.max(1, remainingFrames);
+      const distancePerFrame = remainingDistance * frameStep;
       const movement = moveToward(player.position, safeTarget, distancePerFrame);
       const speed = distancePerFrame * ANIMATION_FRAMES_PER_SECOND;
 
@@ -137,7 +206,8 @@ function latestEventForPlayer(
       event.playerId === playerId &&
       (event.type === "RUN" ||
         event.type === "MOVE" ||
-        event.type === "MOVE_WITH_BALL"),
+        event.type === "MOVE_WITH_BALL" ||
+        event.type === "TURN"),
   );
 }
 
@@ -147,6 +217,7 @@ function latestBallEvent(events: AnimationEvent[]): AnimationEvent | undefined {
       event.type === "MOVE_WITH_BALL" ||
       event.type === "PASS" ||
       event.type === "PASS_TO_SPACE" ||
+      event.type === "SHOT" ||
       event.type === "RECEIVE",
   );
 }
@@ -177,15 +248,24 @@ export function applyAnimationEvent(
     event.startTime + (event.duration ?? 0),
   );
   const remainingFrames = Math.max(1, endFrame - currentFrame + 1);
+  const playerFrameStep = easedFrameStep(event, currentFrame);
 
   switch (event.type) {
+    case "TURN":
+      return updatePlayerOrientation(
+        configuration,
+        event.playerId,
+        event.targetOrientation,
+        playerFrameStep,
+      );
+
     case "RUN":
     case "MOVE":
       return updatePlayer(
         configuration,
         event.playerId,
         event.target,
-        remainingFrames,
+        playerFrameStep,
       );
 
     case "MOVE_WITH_BALL": {
@@ -193,7 +273,7 @@ export function applyAnimationEvent(
         configuration,
         event.playerId,
         event.target,
-        remainingFrames,
+        playerFrameStep,
       );
       const player = movedConfiguration.players.find(
         ({ id }) => id === event.playerId,
@@ -226,6 +306,9 @@ export function applyAnimationEvent(
     }
 
     case "PASS_TO_SPACE":
+      return updateBall(configuration, event.target, remainingFrames);
+
+    case "SHOT":
       return updateBall(configuration, event.target, remainingFrames);
 
     case "RECEIVE": {

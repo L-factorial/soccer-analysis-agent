@@ -27,7 +27,6 @@ export function GoalMarker({ goal, orientation }: GoalMarkerProps) {
   return (
     <View
       accessibilityLabel={`${goal.name}, ${goal.side} goal`}
-      pointerEvents="none"
       style={[
         styles.goal,
         {
@@ -94,6 +93,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     overflow: "visible",
     position: "absolute",
+    pointerEvents: "none",
     zIndex: 1,
   },
   netFill: {

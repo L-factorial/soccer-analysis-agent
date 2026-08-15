@@ -24,6 +24,7 @@ export type {
   AnimationEventBase,
   AnimationEventType,
   AnimationResponse,
+  PlannerDiagnostics,
   EventTarget,
   MoveEvent,
   MoveWithBallEvent,
@@ -31,7 +32,9 @@ export type {
   PassToSpaceEvent,
   ReceiveEvent,
   RunEvent,
+  ShotEvent,
   TimedAnimationEventBase,
+  TurnEvent,
 } from "./animation-event";
 export { createAnimationSession } from "./animation-session";
 export type {
@@ -53,7 +56,15 @@ export type {
   OpenSpaceType,
   RectangularOpenSpace,
 } from "./open-space";
-export type { Player } from "./player";
+export type { Player, PlayerSpeedCategory } from "./player";
 export type { Team } from "./team";
 export type { Position } from "./position";
 export type { Goal, GoalSide } from "./goal";
+export {
+  createFieldSubmission,
+  FIELD_SUBMISSION_SCHEMA_VERSION,
+} from "./field-submission";
+export type {
+  FieldSubmission,
+  SubmittedPlayer,
+} from "./field-submission";

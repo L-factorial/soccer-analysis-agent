@@ -12,26 +12,35 @@ import { BallMarker } from "./BallMarker";
 import { FieldSurface } from "./FieldSurface";
 import { GoalMarker } from "./GoalMarker";
 import { OpenSpaceMarker } from "./OpenSpaceMarker";
+import { OffsideLineOverlay } from "./OffsideLineOverlay";
 import { PlayerMarker } from "./PlayerMarker";
+import { PlayerOrientationDial } from "./PlayerOrientationDial";
 
 type FieldCanvasProps = {
+  attackingTeamId?: string | null;
   configuration: FieldConfiguration;
   orientation: FieldOrientation;
+  offsideReleaseLineX?: number | null;
   onLayout?: (event: LayoutChangeEvent) => void;
   onFieldPress?: (event: GestureResponderEvent) => void;
   onBallMove?: (pageX: number, pageY: number) => void;
   onPlayerMove?: (id: string, pageX: number, pageY: number) => void;
+  onPlayerSelect?: (id: string) => void;
+  onPlayerOrientationChange?: (id: string, orientation: number) => void;
   onOpenSpaceResize?: (id: string, pageX: number, pageY: number) => void;
   onOpenSpaceMove?: (id: string, deltaX: number, deltaY: number) => void;
   onOpenSpaceSelect?: (id: string) => void;
   selectedOpenSpaceId?: string | null;
+  selectedPlayerId?: string | null;
 };
 
 export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
   function FieldCanvas(
     {
       configuration,
+      attackingTeamId,
       orientation,
+      offsideReleaseLineX,
       onBallMove,
       onFieldPress,
       onLayout,
@@ -39,7 +48,10 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
       onOpenSpaceResize,
       onOpenSpaceSelect,
       onPlayerMove,
+      onPlayerOrientationChange,
+      onPlayerSelect,
       selectedOpenSpaceId,
+      selectedPlayerId,
     },
     ref,
   ) {
@@ -81,6 +93,13 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
           />
         ))}
 
+        <OffsideLineOverlay
+          attackingTeamId={attackingTeamId}
+          configuration={configuration}
+          orientation={orientation}
+          releaseLineX={offsideReleaseLineX}
+        />
+
         <BallMarker
           ball={configuration.ball}
           onMove={onBallMove}
@@ -91,14 +110,29 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
           <PlayerMarker
             key={player.id}
             onMove={onPlayerMove}
+            onSelect={onPlayerSelect}
             orientation={orientation}
             player={player}
+            selected={selectedPlayerId === player.id}
             team={
               configuration.teams.find(({ id }) => id === player.teamId) ??
               configuration.teams[0]
             }
           />
         ))}
+
+        {selectedPlayerId && onPlayerOrientationChange && (() => {
+          const player = configuration.players.find(
+            ({ id }) => id === selectedPlayerId,
+          );
+          return player ? (
+            <PlayerOrientationDial
+              onChange={onPlayerOrientationChange}
+              orientation={orientation}
+              player={player}
+            />
+          ) : null;
+        })()}
       </FieldSurface>
     );
   },

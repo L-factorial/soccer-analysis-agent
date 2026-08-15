@@ -2,7 +2,6 @@ import { forwardRef, ReactNode } from "react";
 import {
   GestureResponderEvent,
   LayoutChangeEvent,
-  Pressable,
   StyleSheet,
   View,
 } from "react-native";
@@ -70,10 +69,10 @@ export const FieldSurface = forwardRef<View, FieldSurfaceProps>(
       : { left: "50%" as const };
 
     return (
-      <Pressable
-        accessibilityRole="button"
+      <View
         onLayout={onLayout}
-        onPress={onPress}
+        onResponderRelease={onPress}
+        onStartShouldSetResponder={() => Boolean(onPress)}
         ref={ref}
         style={[
           styles.surface,
@@ -92,7 +91,10 @@ export const FieldSurface = forwardRef<View, FieldSurfaceProps>(
         <View style={styles.centerSpot} />
 
         {(["first", "second"] as const).map((end) => (
-          <View key={end} style={StyleSheet.absoluteFill} pointerEvents="none">
+          <View
+            key={end}
+            style={[StyleSheet.absoluteFill, styles.nonInteractive]}
+          >
             <View
               style={[
                 styles.markingBox,
@@ -135,12 +137,15 @@ export const FieldSurface = forwardRef<View, FieldSurfaceProps>(
           </View>
         ))}
         {children}
-      </Pressable>
+      </View>
     );
   },
 );
 
 const styles = StyleSheet.create({
+  nonInteractive: {
+    pointerEvents: "none",
+  },
   surface: {
     alignItems: "center",
     backgroundColor: "#1E6944",

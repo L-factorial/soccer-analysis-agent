@@ -74,21 +74,21 @@ export function BallMarker({ ball, orientation, onMove }: BallMarkerProps) {
 const styles = StyleSheet.create({
   marker: {
     alignItems: "center",
-    borderRadius: 13,
+    borderRadius: 7,
     cursor: "pointer",
-    height: 26,
+    height: 14,
     justifyContent: "center",
-    marginLeft: -13,
-    marginTop: -13,
+    marginLeft: -7,
+    marginTop: -7,
     position: "absolute",
     touchAction: "none",
     userSelect: "none",
-    width: 26,
+    width: 14,
     zIndex: 4,
   },
   ballGraphic: {
-    fontSize: 22,
-    lineHeight: 26,
+    fontSize: 12,
+    lineHeight: 14,
     textAlign: "center",
   },
 });

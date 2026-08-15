@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   GestureResponderEvent,
@@ -8,11 +8,13 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
 
 import { FieldCanvas } from "../src/features/field-editor";
+import { analyzeFieldConfiguration } from "../src/api/analyze-field";
 import {
   animationFrameToSeconds,
   ManualAnimationBuilder,
@@ -33,6 +35,7 @@ import {
 
 const PRESET_MAPS = ["Balanced", "High press", "Build from back"] as const;
 type SetupMode = "Create new" | "Use preset";
+type AnalysisStatus = "idle" | "loading" | "success" | "error";
 
 type ChoiceButtonProps = {
   label: string;
@@ -145,17 +148,28 @@ export default function HomeScreen() {
   );
   const [selectedTeamId, setSelectedTeamId] = useState("team1");
   const [animationResponse, setAnimationResponse] = useState<AnimationResponse>(
-    { duration: 10, events: [] },
+    { duration: 0, events: [] },
   );
+  const [primaryPlanResponse, setPrimaryPlanResponse] =
+    useState<AnimationResponse | null>(null);
+  const [selectedPlanId, setSelectedPlanId] = useState("requested");
+  const [isPlanDropdownOpen, setIsPlanDropdownOpen] = useState(false);
+  const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>("idle");
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [tacticalInstruction, setTacticalInstruction] = useState("");
   const [setupMode, setSetupMode] = useState<SetupMode>("Create new");
   const [preset, setPreset] = useState<(typeof PRESET_MAPS)[number]>("Balanced");
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
+  const [orientationPlayerId, setOrientationPlayerId] = useState<string | null>(
+    null,
+  );
   const [openSpaceTool, setOpenSpaceTool] = useState<OpenSpaceType | null>(null);
   const [selectedOpenSpaceId, setSelectedOpenSpaceId] = useState<string | null>(
     null,
   );
   const [isSequenceEditorOpen, setIsSequenceEditorOpen] = useState(false);
   const fieldRef = useRef<View>(null);
+  const analysisAbortController = useRef<AbortController | null>(null);
   const openSpaceSequence = useRef(1);
   const playerCount = Number.parseInt(fieldConfiguration.fieldType, 10);
   const selectedTeam =
@@ -172,11 +186,91 @@ export default function HomeScreen() {
     fieldConfiguration,
     animationResponse,
   );
+  const isPlaybackReady =
+    analysisStatus === "success" && animationResponse.events.length > 0;
+  const playbackSeconds = animationFrameToSeconds(session.currentTime);
+  const selectedPhases = animationResponse.diagnostics?.selectedPhases ?? [];
+  const activePhase =
+    selectedPhases.find(
+      (phase) =>
+        playbackSeconds >= phase.startTime && playbackSeconds < phase.endTime,
+    ) ??
+    (playbackSeconds >= animationResponse.duration
+      ? selectedPhases.at(-1)
+      : undefined);
+  const offsideReleaseLineX =
+    activePhase &&
+    playbackSeconds >= activePhase.ballActionStartTime &&
+    (activePhase.actionType === "PASS_TO_PLAYER" ||
+      activePhase.actionType === "PASS_TO_SPACE")
+      ? activePhase.offsideLineX
+      : undefined;
+  const selectedAlternative = primaryPlanResponse?.alternativePlans?.find(
+    ({ id }) => id === selectedPlanId,
+  );
+  const selectedPlanLabel = selectedAlternative?.label ?? "Requested plan";
+  const selectedPlanReason =
+    selectedAlternative?.reason ?? "Follows your tactical instruction.";
+
+  useEffect(() => {
+    analysisAbortController.current?.abort();
+    setAnalysisStatus("idle");
+    setAnalysisError(null);
+    setAnimationResponse({ duration: 0, events: [] });
+    setPrimaryPlanResponse(null);
+    setSelectedPlanId("requested");
+    setIsPlanDropdownOpen(false);
+  }, [fieldConfiguration]);
+
+  useEffect(
+    () => () => analysisAbortController.current?.abort(),
+    [],
+  );
+
+  async function analyzeCurrentField() {
+    analysisAbortController.current?.abort();
+    const controller = new AbortController();
+    analysisAbortController.current = controller;
+    pause();
+    setAnalysisStatus("loading");
+    setAnalysisError(null);
+    setAnimationResponse({ duration: 0, events: [] });
+
+    try {
+      const response = await analyzeFieldConfiguration(
+        fieldConfiguration,
+        tacticalInstruction,
+        controller.signal,
+      );
+      if (!controller.signal.aborted) {
+        setAnimationResponse(response);
+        setPrimaryPlanResponse(response);
+        setSelectedPlanId("requested");
+        setIsPlanDropdownOpen(false);
+        setAnalysisStatus("success");
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setAnalysisStatus("error");
+        setAnalysisError(
+          error instanceof Error ? error.message : "Unable to analyze the field.",
+        );
+      }
+    }
+  }
+
+  function updateManualAnimation(response: AnimationResponse) {
+    setAnimationResponse(response);
+    setPrimaryPlanResponse(null);
+    setAnalysisError(null);
+    setAnalysisStatus(response.events.length > 0 ? "success" : "idle");
+  }
 
   function changeFieldFormat(fieldType: FieldFormat) {
     setFieldConfiguration(createFieldConfiguration(fieldType));
     setAnimationResponse((current) => ({ ...current, events: [] }));
     setSelectedPlayerId(null);
+    setOrientationPlayerId(null);
     setOpenSpaceTool(null);
     setSelectedOpenSpaceId(null);
     setSelectedTeamId("team1");
@@ -197,7 +291,6 @@ export default function HomeScreen() {
 
       const number = Number.parseInt(id.split("-").at(-1) ?? "", 10);
       const teamId = id.slice(0, id.lastIndexOf("-"));
-      const team = fieldConfiguration.teams.find(({ id }) => id === teamId);
       const position = screenToFieldPosition(
         {
           x: (pageX - x) / width,
@@ -205,24 +298,58 @@ export default function HomeScreen() {
         },
         fieldOrientation,
       );
-      const player = {
-        id,
-        name: `${team?.name ?? "team"}-${number}`,
-        number,
-        teamId,
-        position,
-        orientation: 0,
-      };
+      setFieldConfiguration((current) => {
+        const team = current.teams.find(({ id }) => id === teamId);
+        const existing = current.players.find((player) => player.id === id);
+        const defendedGoal = current.goals.find(
+          ({ id }) => id === team?.defendedGoalId,
+        );
+        const player = {
+          id,
+          name: `${team?.name ?? "team"}-${number}`,
+          number,
+          teamId,
+          position,
+          orientation:
+            existing?.orientation ?? (defendedGoal?.side === "right" ? 180 : 0),
+          speedCategory: existing?.speedCategory ?? "BASELINE",
+        };
 
-      setFieldConfiguration((current) => ({
-        ...current,
-        players: [
-          ...current.players.filter((currentPlayer) => currentPlayer.id !== id),
-          player,
-        ],
-      }));
+        return {
+          ...current,
+          players: [
+            ...current.players.filter((currentPlayer) => currentPlayer.id !== id),
+            player,
+          ],
+        };
+      });
     });
-  }, [fieldConfiguration.teams, fieldOrientation]);
+  }, [fieldOrientation]);
+
+  const setPlayerOrientation = useCallback((id: string, orientation: number) => {
+    const normalizedOrientation = ((orientation % 360) + 360) % 360;
+    setFieldConfiguration((current) => {
+      const player = current.players.find((candidate) => candidate.id === id);
+      if (!player) {
+        return current;
+      }
+      const difference = Math.abs(
+        ((normalizedOrientation - player.orientation + 540) % 360) - 180,
+      );
+      if (difference < 0.01) {
+        return current;
+      }
+      return {
+        ...current,
+        players: current.players.map((candidate) =>
+          candidate.id === id
+            ? { ...candidate, orientation: normalizedOrientation }
+            : candidate,
+        ),
+      };
+    });
+  }, []);
+
 
   const placeBall = useCallback((pageX: number, pageY: number) => {
     fieldRef.current?.measureInWindow((x, y, width, height) => {
@@ -254,9 +381,34 @@ export default function HomeScreen() {
 
   const selectPlayer = useCallback((id: string) => {
     setSelectedPlayerId(id);
+    setOrientationPlayerId(null);
     setOpenSpaceTool(null);
     setSelectedOpenSpaceId(null);
   }, []);
+
+  const selectFieldPlayer = useCallback((id: string) => {
+    if (orientationPlayerId === id) {
+      setFieldConfiguration((current) => ({
+        ...current,
+        players: current.players.map((player) => {
+          if (player.id !== id) {
+            return player;
+          }
+          const speedCategory =
+            player.speedCategory === "BASELINE"
+              ? "FAST"
+              : player.speedCategory === "FAST"
+                ? "SUPER_FAST"
+                : "BASELINE";
+          return { ...player, speedCategory };
+        }),
+      }));
+    }
+    setOrientationPlayerId(id);
+    setSelectedPlayerId(null);
+    setOpenSpaceTool(null);
+    setSelectedOpenSpaceId(null);
+  }, [orientationPlayerId]);
 
   const createOpenSpace = useCallback(
     (type: OpenSpaceType, pageX: number, pageY: number) => {
@@ -434,6 +586,7 @@ export default function HomeScreen() {
   function selectOpenSpaceTool(type: OpenSpaceType) {
     setOpenSpaceTool(type);
     setSelectedPlayerId(null);
+    setOrientationPlayerId(null);
     setSelectedOpenSpaceId(null);
   }
 
@@ -441,6 +594,7 @@ export default function HomeScreen() {
     setSelectedOpenSpaceId(id);
     setOpenSpaceTool(null);
     setSelectedPlayerId(null);
+    setOrientationPlayerId(null);
   }
 
   function deleteSelectedOpenSpace() {
@@ -458,6 +612,7 @@ export default function HomeScreen() {
   }
 
   function placeSelectedElement(event: GestureResponderEvent) {
+    setOrientationPlayerId(null);
     if (openSpaceTool) {
       createOpenSpace(
         openSpaceTool,
@@ -555,7 +710,7 @@ export default function HomeScreen() {
                 {selectedTeam.name} players
               </Text>
               <Text style={styles.sectionHelp}>
-                Select a player, then tap the field
+                Drag to move; tap a field player to rotate
               </Text>
               <View style={styles.playerTray}>
                 {availablePlayers.map((player) => (
@@ -677,7 +832,7 @@ export default function HomeScreen() {
               {isSequenceEditorOpen && (
                 <ManualAnimationBuilder
                   configuration={fieldConfiguration}
-                  onChange={setAnimationResponse}
+                  onChange={updateManualAnimation}
                   response={animationResponse}
                 />
               )}
@@ -694,13 +849,42 @@ export default function HomeScreen() {
               </Text>
             </View>
             <View style={styles.playbackControls}>
+              <TextInput
+                accessibilityLabel="Tactical instruction"
+                editable={analysisStatus !== "loading"}
+                maxLength={500}
+                onChangeText={setTacticalInstruction}
+                placeholder="e.g. attack quickly through wide spaces"
+                placeholderTextColor="#89918C"
+                style={styles.tacticalInstructionInput}
+                value={tacticalInstruction}
+              />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: analysisStatus === "loading" }}
+                disabled={analysisStatus === "loading"}
+                onPress={analyzeCurrentField}
+                style={[
+                  styles.analyzeButton,
+                  analysisStatus === "loading" && styles.controlButtonDisabled,
+                ]}
+              >
+                <Text style={styles.analyzeButtonText}>
+                  {analysisStatus === "loading" ? "Analyzing…" : "Analyze"}
+                </Text>
+              </Pressable>
               <Text style={styles.playbackTime}>
-                {animationFrameToSeconds(session.currentTime).toFixed(2)} / {session.response.duration}s
+                {playbackSeconds.toFixed(2)} / {session.response.duration}s
               </Text>
               <Pressable
                 accessibilityRole="button"
+                accessibilityState={{ disabled: !isPlaybackReady }}
+                disabled={!isPlaybackReady}
                 onPress={session.status === "playing" ? pause : play}
-                style={styles.playbackButton}
+                style={[
+                  styles.playbackButton,
+                  !isPlaybackReady && styles.controlButtonDisabled,
+                ]}
               >
                 <Text style={styles.playbackButtonText}>
                   {session.status === "playing" ? "Pause" : "Play"}
@@ -708,26 +892,155 @@ export default function HomeScreen() {
               </Pressable>
               <Pressable
                 accessibilityRole="button"
+                accessibilityState={{ disabled: !isPlaybackReady }}
+                disabled={!isPlaybackReady}
                 onPress={reset}
-                style={styles.resetButton}
+                style={[
+                  styles.resetButton,
+                  !isPlaybackReady && styles.controlButtonDisabled,
+                ]}
               >
                 <Text style={styles.resetButtonText}>Reset</Text>
               </Pressable>
             </View>
           </View>
 
+          {analysisError && (
+            <Text accessibilityRole="alert" style={styles.analysisError}>
+              {analysisError}
+            </Text>
+          )}
+
+          {primaryPlanResponse &&
+            (primaryPlanResponse.alternativePlans?.length ?? 0) > 0 && (
+              <View style={styles.planOptions}>
+                <Text style={styles.planOptionsTitle}>Planning options</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: isPlanDropdownOpen }}
+                  onPress={() => setIsPlanDropdownOpen((open) => !open)}
+                  style={styles.planDropdownButton}
+                >
+                  <View style={styles.planDropdownText}>
+                    <Text style={styles.planOptionLabel}>{selectedPlanLabel}</Text>
+                    <Text style={styles.planOptionReason}>{selectedPlanReason}</Text>
+                  </View>
+                  <Text style={styles.planDropdownChevron}>
+                    {isPlanDropdownOpen ? "▲" : "▼"}
+                  </Text>
+                </Pressable>
+                {isPlanDropdownOpen && (
+                  <View style={styles.planDropdownMenu}>
+                  <Pressable
+                    onPress={() => {
+                      pause();
+                      setAnimationResponse(primaryPlanResponse);
+                      setSelectedPlanId("requested");
+                      setIsPlanDropdownOpen(false);
+                    }}
+                    style={[
+                      styles.planDropdownItem,
+                      selectedPlanId === "requested" && styles.planOptionSelected,
+                    ]}
+                  >
+                    <Text style={styles.planOptionLabel}>Requested plan</Text>
+                    <Text style={styles.planOptionReason}>
+                      Follows your tactical instruction.
+                    </Text>
+                  </Pressable>
+                  {primaryPlanResponse.alternativePlans?.map((plan) => (
+                    <Pressable
+                      key={plan.id}
+                      onPress={() => {
+                        pause();
+                        setAnimationResponse({
+                          duration: plan.duration,
+                          events: plan.events,
+                          diagnostics: plan.diagnostics,
+                        });
+                        setSelectedPlanId(plan.id);
+                        setIsPlanDropdownOpen(false);
+                      }}
+                      style={[
+                        styles.planDropdownItem,
+                        selectedPlanId === plan.id && styles.planOptionSelected,
+                      ]}
+                    >
+                      <Text style={styles.planOptionLabel}>{plan.label}</Text>
+                      <Text style={styles.planOptionReason}>{plan.reason}</Text>
+                    </Pressable>
+                  ))}
+                  </View>
+                )}
+              </View>
+            )}
+
+          {selectedPhases.length > 0 && (
+            <View style={styles.planSummary}>
+              <View style={styles.planSummaryHeader}>
+                <Text style={styles.planSummaryEyebrow}>SELECTED TACTICAL PLAN</Text>
+                <Text style={styles.planSummaryScore}>
+                  {animationResponse.diagnostics?.selectedSequenceScore?.toFixed(1)} pts
+                </Text>
+              </View>
+              <View style={styles.phaseStrip}>
+                {selectedPhases.map((phase, index) => {
+                  const active = phase.id === activePhase?.id;
+                  return (
+                    <View
+                      key={`${phase.id}-${index}`}
+                      style={[styles.phaseCard, active && styles.phaseCardActive]}
+                    >
+                      <Text
+                        style={[
+                          styles.phaseCardIndex,
+                          active && styles.phaseCardTextActive,
+                        ]}
+                      >
+                        {index + 1} · {phase.startTime.toFixed(1)}–{phase.endTime.toFixed(1)}s
+                      </Text>
+                      <Text
+                        style={[
+                          styles.phaseCardTitle,
+                          active && styles.phaseCardTextActive,
+                        ]}
+                      >
+                        {phase.phaseType.replaceAll("_", " ")}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.phaseCardDetail,
+                          active && styles.phaseCardDetailActive,
+                        ]}
+                      >
+                        {phase.actorId}
+                        {phase.receiverId ? ` → ${phase.receiverId}` : ""}
+                        {phase.scoredGoal ? " · GOAL" : ""}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
           <View style={[styles.fieldFrame, isWide && styles.fieldFrameWide]}>
             <FieldCanvas
+              attackingTeamId={animationResponse.diagnostics?.attackingTeamId}
               configuration={session.animatedConfiguration}
               onBallMove={placeBall}
               onFieldPress={placeSelectedElement}
               onOpenSpaceMove={moveOpenSpace}
               onOpenSpaceResize={resizeOpenSpace}
               onOpenSpaceSelect={selectOpenSpace}
+              offsideReleaseLineX={offsideReleaseLineX}
               onPlayerMove={placePlayer}
+              onPlayerOrientationChange={setPlayerOrientation}
+              onPlayerSelect={selectFieldPlayer}
               orientation={fieldOrientation}
               ref={fieldRef}
               selectedOpenSpaceId={selectedOpenSpaceId}
+              selectedPlayerId={orientationPlayerId}
             />
           </View>
         </View>
@@ -1007,6 +1320,160 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: 8,
+  },
+  tacticalInstructionInput: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#CBD5C8",
+    borderRadius: 8,
+    borderWidth: 1,
+    color: "#18251F",
+    fontSize: 11,
+    minWidth: 250,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  analyzeButton: {
+    backgroundColor: "#A9D22D",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  analyzeButtonText: {
+    color: "#17231D",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  controlButtonDisabled: {
+    opacity: 0.4,
+  },
+  analysisError: {
+    color: "#A63D30",
+    fontSize: 12,
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  planOptions: {
+    gap: 8,
+    marginBottom: 8,
+    maxWidth: 480,
+  },
+  planOptionsTitle: {
+    color: "#657264",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 1.1,
+    width: "100%",
+  },
+  planDropdownButton: {
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderColor: "#DCE1D9",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  planDropdownText: {
+    flex: 1,
+  },
+  planDropdownChevron: {
+    color: "#657264",
+    fontSize: 9,
+    marginLeft: 12,
+  },
+  planDropdownMenu: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#DCE1D9",
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  planDropdownItem: {
+    borderBottomColor: "#E8ECE5",
+    borderBottomWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  planOptionSelected: {
+    backgroundColor: "#EEF6D8",
+    borderColor: "#A9D22D",
+  },
+  planOptionLabel: {
+    color: "#203028",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  planOptionReason: {
+    color: "#69736C",
+    fontSize: 9,
+    marginTop: 2,
+  },
+  planSummary: {
+    backgroundColor: "#F4F7EF",
+    borderColor: "#DDE5D3",
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 7,
+    marginBottom: 8,
+    padding: 8,
+  },
+  planSummaryHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  planSummaryEyebrow: {
+    color: "#657264",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 1.1,
+  },
+  planSummaryScore: {
+    color: "#657264",
+    fontSize: 9,
+    fontWeight: "700",
+  },
+  phaseStrip: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  phaseCard: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#DCE1D9",
+    borderRadius: 7,
+    borderWidth: 1,
+    minWidth: 118,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  phaseCardActive: {
+    backgroundColor: "#183E2B",
+    borderColor: "#183E2B",
+  },
+  phaseCardIndex: {
+    color: "#7A837C",
+    fontSize: 8,
+    fontWeight: "700",
+  },
+  phaseCardTitle: {
+    color: "#203028",
+    fontSize: 10,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  phaseCardDetail: {
+    color: "#69736C",
+    fontSize: 9,
+    marginTop: 1,
+  },
+  phaseCardTextActive: {
+    color: "#FFFFFF",
+  },
+  phaseCardDetailActive: {
+    color: "#D9E8DE",
   },
   playbackTime: {
     color: "#68716A",

@@ -142,7 +142,6 @@ export function OpenSpaceMarker({
       ]}
     >
       <View
-        pointerEvents="none"
         style={[
           styles.dotPattern,
           openSpace.type === "circular" && styles.circularDotPattern,
@@ -160,7 +159,7 @@ export function OpenSpaceMarker({
         ))}
       </View>
 
-      <Text pointerEvents="none" style={styles.nameLabel}>
+      <Text style={styles.nameLabel}>
         {openSpace.name}
       </Text>
 
@@ -206,6 +205,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
     paddingVertical: 2,
     position: "absolute",
+    pointerEvents: "none",
     top: 5,
     zIndex: 2,
   },
@@ -216,6 +216,7 @@ const styles = StyleSheet.create({
     left: 0,
     overflow: "hidden",
     position: "absolute",
+    pointerEvents: "none",
     right: 0,
     top: 0,
   },

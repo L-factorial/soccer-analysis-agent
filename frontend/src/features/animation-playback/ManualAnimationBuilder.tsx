@@ -16,7 +16,9 @@ import {
 } from "../../models";
 import { TimelineRangeSlider } from "./TimelineRangeSlider";
 
-const EVENT_TYPES: AnimationEventType[] = [
+type ManualAnimationEventType = Exclude<AnimationEventType, "SHOT" | "TURN">;
+
+const EVENT_TYPES: ManualAnimationEventType[] = [
   "MOVE",
   "RUN",
   "MOVE_WITH_BALL",
@@ -104,6 +106,10 @@ function eventSummary(event: AnimationEvent): string {
       return `PASS · ${event.playerId} → ${event.targetPlayerId}`;
     case "PASS_TO_SPACE":
       return `PASS TO SPACE · ${event.playerId} → ${event.intendedReceiverId} via ${event.spaceId}`;
+    case "SHOT":
+      return `SHOT · ${event.playerId} → ${event.goalId}`;
+    case "TURN":
+      return `TURN · ${event.playerId} → ${Math.round(event.targetOrientation)}°`;
     case "RECEIVE":
       return `RECEIVE · ${event.playerId}`;
   }
@@ -121,7 +127,7 @@ export function ManualAnimationBuilder({
   onChange,
   response,
 }: ManualAnimationBuilderProps) {
-  const [eventType, setEventType] = useState<AnimationEventType>("MOVE");
+  const [eventType, setEventType] = useState<ManualAnimationEventType>("MOVE");
   const [playerId, setPlayerId] = useState("");
   const [receiverId, setReceiverId] = useState("");
   const [destinationType, setDestinationType] =
@@ -343,7 +349,7 @@ export function ManualAnimationBuilder({
       <OptionPicker
         label="Event type"
         onChange={(value) => {
-          setEventType(value as AnimationEventType);
+          setEventType(value as ManualAnimationEventType);
           if (value === "PASS_TO_SPACE") {
             setDestinationType("openSpace");
           }
