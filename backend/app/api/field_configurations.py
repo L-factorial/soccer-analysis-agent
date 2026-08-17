@@ -6,15 +6,11 @@ from pydantic import BaseModel, Field
 
 from app.agent import (
     AgentConfig,
-    AgentPlanningMetadata,
-    AgentPlanningRun,
-    PlanningMode,
     TacticalAgent,
 )
 from app.agent.tool_service import ToolAgentNoCompliantPlanError, ToolPlanningAgent
 from app.builders import (
     build_initial_game_state,
-    build_phase_animation_response,
     build_phase_planner_diagnostics,
 )
 from app.domain import PossessionStatus
@@ -22,7 +18,8 @@ from app.models.animation_response import AlternativePlan, AnimationResponse
 from app.models.field_submission import FieldSubmission
 from app.phases import PhaseSearchPolicy, search_tactical_phases
 from app.planning import analyze_game_state
-from app.tactical_instruction import interpret_tactical_instruction
+from app.orchestration import PlannerDependencies, run_tactical_planner
+from app.scheduling import PhaseAnimationScheduler
 from app.validation import FieldSubmissionValidationError, validate_field_submission
 
 router = APIRouter(prefix="/field-configurations", tags=["field configurations"])
@@ -39,53 +36,29 @@ def _base_search_policy() -> PhaseSearchPolicy:
 
 
 def _run_planner(analyzed, instruction: str | None):
-    """Select agentic or deterministic orchestration without changing the engine."""
+    """Compatibility entry point for request-level planner orchestration."""
     config = AgentConfig.from_environment()
-    if config.enabled and instruction and instruction.strip():
-        try:
-            if config.planning_mode == PlanningMode.LLM_TOOL_AGENT:
-                return ToolPlanningAgent(config).plan(
-                    analyzed,
-                    instruction,
-                    _base_search_policy(),
-                )
-            return TacticalAgent(config).plan(
-                analyzed,
-                instruction,
-                _base_search_policy(),
-            )
-        except ToolAgentNoCompliantPlanError as error:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": "no_instruction_compliant_plan",
-                    "message": str(error),
-                },
-            ) from error
-        except Exception as error:  # External failures must preserve core analysis.
-            logger.exception("Agentic planning failed; using deterministic fallback")
-            fallback_reason = type(error).__name__
-    else:
-        fallback_reason = None
-
-    instruction_policy = interpret_tactical_instruction(
-        instruction,
-        _base_search_policy(),
-    )
-    result = search_tactical_phases(
-        analyzed,
-        instruction_policy.search,
-        scoring_policy=instruction_policy.scoring,
-    )
-    mode = "AGENTIC_FALLBACK" if fallback_reason else "DETERMINISTIC"
-    return AgentPlanningRun(
-        result=result,
-        metadata=AgentPlanningMetadata(
-            mode=mode,
-            fallbackReason=fallback_reason,
-        ),
-        applied_directives=instruction_policy.applied_directives,
-    )
+    try:
+        return run_tactical_planner(
+            analyzed,
+            instruction,
+            _base_search_policy(),
+            config,
+            PlannerDependencies(
+                deterministic_search=search_tactical_phases,
+                tactical_agent_factory=TacticalAgent,
+                tool_agent_factory=ToolPlanningAgent,
+            ),
+            logger,
+        )
+    except ToolAgentNoCompliantPlanError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "no_instruction_compliant_plan",
+                "message": str(error),
+            },
+        ) from error
 
 
 def _augment_diagnostics(diagnostics, submission, run):
@@ -155,6 +128,8 @@ def analyze_field_configuration(submission: FieldSubmission) -> AnimationRespons
         "Received field analysis request: %s",
         json.dumps(submission.model_dump(by_alias=True)),
     )
+    # Boundary validation rejects malformed soccer layouts before constructing
+    # authoritative domain state.
     _validate_submission(submission)
     analyzed = analyze_game_state(build_initial_game_state(submission))
     if analyzed.game_state.possession.status != PossessionStatus.CONTROLLED:
@@ -166,6 +141,8 @@ def analyze_field_configuration(submission: FieldSubmission) -> AnimationRespons
             },
         )
 
+    # Orchestration may consult an LLM, but every returned sequence has been
+    # generated and simulated by the same deterministic tactical engine.
     run = _run_planner(analyzed, submission.tactical_instruction)
     result = run.result
     attacking_team_id = analyzed.game_state.possession.team_id
@@ -174,6 +151,8 @@ def analyze_field_configuration(submission: FieldSubmission) -> AnimationRespons
         if run.metadata.intent is not None
         else ()
     )
+    # The public analyze contract is goal-oriented. A high-scoring non-goal
+    # frontier node remains useful diagnostics but cannot become the animation.
     scoring_sequences = tuple(
         sequence
         for sequence in result.best_sequences
@@ -205,7 +184,10 @@ def analyze_field_configuration(submission: FieldSubmission) -> AnimationRespons
             },
         )
     selected = scoring_sequences[0]
-    animation_response = build_phase_animation_response(
+    # Scheduling is deliberately last: it projects the selected immutable plan
+    # onto timestamps and never changes search or simulation decisions.
+    scheduler = PhaseAnimationScheduler()
+    animation_response = scheduler.schedule(
         selected,
         build_phase_planner_diagnostics(result, selected),
     )
@@ -220,7 +202,7 @@ def analyze_field_configuration(submission: FieldSubmission) -> AnimationRespons
         )
     alternatives = []
     for index, sequence in enumerate(run.alternative_sequences[:2]):
-        alternative = build_phase_animation_response(
+        alternative = scheduler.schedule(
             sequence,
             build_phase_planner_diagnostics(result, sequence),
         )

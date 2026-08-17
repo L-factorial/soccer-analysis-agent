@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from itertools import combinations, permutations
 
 from app.analysis import ActionType
 from app.domain import (
@@ -22,6 +23,11 @@ from app.phases.models import (
 
 @dataclass(frozen=True, slots=True)
 class PhaseGenerationPolicy:
+    """Tunable coordinated-movement constants.
+
+    Distance values are centimeters, speeds are centimeters/second, angles are
+    degrees, and reaction/start offsets are seconds.
+    """
     maximum_phases: int = 50
     support_offset_cm: float = 900
     wide_run_offset_cm: float = 1200
@@ -35,6 +41,14 @@ class PhaseGenerationPolicy:
     turning_speed_degrees_per_second: float = 180
     decoy_run_forward_cm: float = 1000
     decoy_run_lateral_cm: float = 1400
+    support_reaction_seconds: float = 0.15
+    attacking_shape_reaction_seconds: float = 0.25
+    # The nearest defender is already actively pressing at the phase boundary.
+    press_reaction_seconds: float = 0.0
+    tracking_reaction_seconds: float = 0.20
+    defensive_shape_reaction_seconds: float = 0.35
+    goalkeeper_reaction_seconds: float = 0.15
+    support_ahead_tolerance_cm: float = 300
 
 
 def _nearest(
@@ -48,6 +62,98 @@ def _nearest(
         key=lambda player: (distance(player.position, target), player.id),
         default=None,
     )
+
+
+def _progress(state: GameState, player: PlayerState) -> float:
+    direction = state.teams_by_id[player.team_id].attacking_direction
+    return player.position.x if direction == AttackingDirection.POSITIVE_X else -player.position.x
+
+
+def _target_progress(
+    state: GameState,
+    team_id: str,
+    target: Vector2,
+) -> float:
+    direction = state.teams_by_id[team_id].attacking_direction
+    return target.x if direction == AttackingDirection.POSITIVE_X else -target.x
+
+
+def _off_ball_player_for_role(
+    state: GameState,
+    players: tuple[PlayerState, ...],
+    target: Vector2,
+    intention_type: AttackingIntentionType,
+    excluded: set[str],
+    policy: PhaseGenerationPolicy,
+) -> PlayerState | None:
+    available = tuple(player for player in players if player.id not in excluded)
+    if not available:
+        return None
+    if intention_type == AttackingIntentionType.SUPPORT_BALL:
+        target_progress = _target_progress(state, available[0].team_id, target)
+        supporting = tuple(
+            player
+            for player in available
+            if _progress(state, player)
+            <= target_progress + policy.support_ahead_tolerance_cm
+        )
+        pool = supporting or available
+        return min(
+            pool,
+            key=lambda player: (distance(player.position, target), player.id),
+        )
+    if intention_type == AttackingIntentionType.FORWARD_RUN:
+        return min(
+            available,
+            key=lambda player: (
+                -player.speed_category.multiplier,
+                distance(player.position, target),
+                -_progress(state, player),
+                player.id,
+            ),
+        )
+    return _nearest(available, target)
+
+
+def _assign_forward_runs(
+    state: GameState,
+    players: tuple[PlayerState, ...],
+    targets: tuple[Vector2, ...],
+    excluded: set[str],
+) -> tuple[tuple[PlayerState, Vector2], ...]:
+    """Globally match runners to targets without avoidable lane crossing.
+
+    Arrival time rewards speed while normalized lateral cost preserves natural
+    lanes. Joint assignment prevents a greedy fastest-first choice from forcing
+    another runner across the field.
+    """
+    available = tuple(player for player in players if player.id not in excluded)
+    assignment_count = min(len(available), len(targets))
+    if assignment_count == 0:
+        return ()
+    best: tuple[float, tuple] | None = None
+    best_pairs: tuple[tuple[PlayerState, Vector2], ...] = ()
+    for selected_targets in combinations(targets, assignment_count):
+        for selected_players in permutations(available, assignment_count):
+            pairs = tuple(zip(selected_players, selected_targets, strict=True))
+            arrival_cost = sum(
+                distance(player.position, target)
+                / (650 * player.speed_category.multiplier)
+                for player, target in pairs
+            )
+            lateral_cost = sum(
+                abs(player.position.y - target.y) / state.field.width
+                for player, target in pairs
+            )
+            identity = tuple(
+                (player.id, round(target.x, 6), round(target.y, 6))
+                for player, target in pairs
+            )
+            rank = (arrival_cost + lateral_cost, identity)
+            if best is None or rank < best:
+                best = rank
+                best_pairs = pairs
+    return best_pairs
 
 
 def _support_target(state: GameState, team_id: str, target: Vector2, offset: float) -> Vector2:
@@ -238,7 +344,7 @@ def _complete_attacking_shape(
                 lane_y,
                 policy,
             ),
-            start_offset_seconds=0,
+            start_offset_seconds=policy.attacking_shape_reaction_seconds,
         )
         for attacker, lane_y in lane_assignments
     )
@@ -278,6 +384,7 @@ def _complete_defensive_shape(
                 policy,
             ),
             target_player_id=None,
+            start_offset_seconds=policy.defensive_shape_reaction_seconds,
         )
         for defender, lane_y in zip(unassigned, sorted(lanes), strict=False)
     )
@@ -291,29 +398,20 @@ def _dribble_support_intentions(
     destination: Vector2,
     policy: PhaseGenerationPolicy,
 ) -> tuple[AttackingIntention, ...]:
-    targets: list[tuple[AttackingIntentionType, Vector2]] = [
-        (
-            AttackingIntentionType.SUPPORT_BALL,
-            _support_target(
-                state,
-                teammates[0].team_id,
-                destination,
-                policy.support_offset_cm,
-            ),
+    support_target = _support_target(
+        state,
+        teammates[0].team_id,
+        destination,
+        policy.support_offset_cm,
+    )
+    forward_targets = [
+        _bounded_target(
+            state,
+            Vector2(destination.x, destination.y - policy.wide_run_offset_cm),
         ),
-        (
-            AttackingIntentionType.FORWARD_RUN,
-            _bounded_target(
-                state,
-                Vector2(destination.x, destination.y - policy.wide_run_offset_cm),
-            ),
-        ),
-        (
-            AttackingIntentionType.FORWARD_RUN,
-            _bounded_target(
-                state,
-                Vector2(destination.x, destination.y + policy.wide_run_offset_cm),
-            ),
+        _bounded_target(
+            state,
+            Vector2(destination.x, destination.y + policy.wide_run_offset_cm),
         ),
     ]
     dynamic_spaces = tuple(
@@ -322,27 +420,43 @@ def _dribble_support_intentions(
         if zone.source == TargetZoneSource.DYNAMIC
         and zone.attacking_team_id == teammates[0].team_id
     )
-    targets.extend(
-        (AttackingIntentionType.FORWARD_RUN, zone.center)
-        for zone in dynamic_spaces[: policy.maximum_dynamic_support_spaces]
+    forward_targets.extend(
+        zone.center for zone in dynamic_spaces[: policy.maximum_dynamic_support_spaces]
     )
+    forward_targets = list(dict.fromkeys(forward_targets))
 
     intentions: list[AttackingIntention] = []
-    seen: set[tuple[str, float, float]] = set()
-    for intention_type, target in targets:
-        support = _nearest(teammates, target, excluded)
-        if support is None:
-            continue
-        key = (support.id, round(target.x, 6), round(target.y, 6))
-        if key in seen:
-            continue
-        seen.add(key)
+    assigned = set(excluded)
+    support = _off_ball_player_for_role(
+        state,
+        teammates,
+        support_target,
+        AttackingIntentionType.SUPPORT_BALL,
+        assigned,
+        policy,
+    )
+    if support is not None:
+        assigned.add(support.id)
         intentions.append(
             AttackingIntention(
                 player_id=support.id,
-                intention_type=intention_type,
+                intention_type=AttackingIntentionType.SUPPORT_BALL,
+                target=support_target,
+                start_offset_seconds=policy.support_reaction_seconds,
+            )
+        )
+    for runner, target in _assign_forward_runs(
+        state,
+        teammates,
+        tuple(forward_targets),
+        assigned,
+    ):
+        intentions.append(
+            AttackingIntention(
+                player_id=runner.id,
+                intention_type=AttackingIntentionType.FORWARD_RUN,
                 target=target,
-                start_offset_seconds=0,
+                start_offset_seconds=policy.support_reaction_seconds,
             )
         )
     return tuple(intentions)
@@ -393,10 +507,13 @@ def generate_tactical_phases(
         excluded_attackers = {actor.id}
         if action.receiver_id:
             excluded_attackers.add(action.receiver_id)
-        support = _nearest(
+        support = _off_ball_player_for_role(
+            state,
             outfield_teammates,
             action.destination,
+            AttackingIntentionType.SUPPORT_BALL,
             excluded_attackers,
+            policy,
         )
         presser = _nearest(outfield_defenders, action.start)
         tracker = _nearest(
@@ -445,7 +562,7 @@ def generate_tactical_phases(
                         action.destination,
                         policy.support_offset_cm,
                     ),
-                    start_offset_seconds=0,
+                    start_offset_seconds=policy.support_reaction_seconds,
                 ),
             )
         if presser is not None:
@@ -455,6 +572,7 @@ def generate_tactical_phases(
                     intention_type=DefensiveIntentionType.PRESS_BALL_CARRIER,
                     target=action.start,
                     target_player_id=actor.id,
+                    start_offset_seconds=policy.press_reaction_seconds,
                 )
             )
         if tracker is not None:
@@ -468,6 +586,11 @@ def generate_tactical_phases(
                     ),
                     target=action.destination,
                     target_player_id=action.receiver_id,
+                    start_offset_seconds=(
+                        policy.goalkeeper_reaction_seconds
+                        if template == PhaseTemplateType.SHOT
+                        else policy.tracking_reaction_seconds
+                    ),
                 )
             )
         for goalkeeper in defending_goalkeepers:
@@ -480,6 +603,7 @@ def generate_tactical_phases(
                     intention_type=DefensiveIntentionType.COVER_GOAL,
                     target=defended_goal.center,
                     target_player_id=action.actor_id,
+                    start_offset_seconds=policy.goalkeeper_reaction_seconds,
                 )
             )
         core_defensive = tuple(defensive)
@@ -538,6 +662,7 @@ def generate_tactical_phases(
                         intention_type=DefensiveIntentionType.TRACK_RECEIVER,
                         target=decoy_intention.target,
                         target_player_id=decoy.id,
+                        start_offset_seconds=policy.tracking_reaction_seconds,
                     )
                     tactical_variants.append(
                         (
@@ -557,6 +682,7 @@ def generate_tactical_phases(
                         intention_type=DefensiveIntentionType.COVER_PASSING_LANE,
                         target=lane_target,
                         target_player_id=None,
+                        start_offset_seconds=policy.tracking_reaction_seconds,
                     )
                     tactical_variants.append(
                         (

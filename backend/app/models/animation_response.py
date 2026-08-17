@@ -6,6 +6,7 @@ from app.models.position import Position
 
 
 class TimedEvent(BaseModel):
+    """Base for positive-duration UI events; timestamps are response seconds."""
     id: str
     player_id: str = Field(serialization_alias="playerId")
     start_time: float = Field(serialization_alias="startTime", ge=0)
@@ -13,22 +14,26 @@ class TimedEvent(BaseModel):
 
 
 class MoveEvent(TimedEvent):
+    """Player translation: generic move, coordinated run, or controlled dribble."""
     type: Literal["MOVE", "RUN", "MOVE_WITH_BALL"]
     target: Position
 
 
 class TurnEvent(TimedEvent):
+    """Rotation performed before movement or ball release when required."""
     type: Literal["TURN"]
     start_orientation: float = Field(serialization_alias="startOrientation")
     target_orientation: float = Field(serialization_alias="targetOrientation")
 
 
 class PassEvent(TimedEvent):
+    """Direct player-to-player ball travel."""
     type: Literal["PASS"]
     target_player_id: str = Field(serialization_alias="targetPlayerId")
 
 
 class PassToSpaceEvent(TimedEvent):
+    """Ball travel to a zone/point with a nominated receiving player."""
     type: Literal["PASS_TO_SPACE"]
     intended_receiver_id: str = Field(serialization_alias="intendedReceiverId")
     space_id: str = Field(serialization_alias="spaceId")
@@ -36,12 +41,14 @@ class PassToSpaceEvent(TimedEvent):
 
 
 class ShotEvent(TimedEvent):
+    """Ball travel toward a goal target; scoring is already resolved by simulation."""
     type: Literal["SHOT"]
     goal_id: str = Field(serialization_alias="goalId")
     target: Position
 
 
 class ReceiveEvent(BaseModel):
+    """Instantaneous possession handoff and therefore intentionally has no duration."""
     id: str
     type: Literal["RECEIVE"]
     player_id: str = Field(serialization_alias="playerId")
@@ -52,15 +59,18 @@ AnimationEvent = Annotated[
     MoveEvent | TurnEvent | PassEvent | PassToSpaceEvent | ShotEvent | ReceiveEvent,
     Field(discriminator="type"),
 ]
+"""Discriminated event union serialized to and replayed by the frontend."""
 
 
 class DynamicSpaceDiagnostic(BaseModel):
+    """Computed space exposed for UI explanation, not a scheduled event."""
     id: str
     center: Position
     radius: float
 
 
 class PhaseIntentionDiagnostic(BaseModel):
+    """Explainable attacking/defensive assignment for a selected phase."""
     side: Literal["ATTACKING", "DEFENSIVE"]
     player_id: str = Field(serialization_alias="playerId")
     intention_type: str = Field(serialization_alias="intentionType")
@@ -72,6 +82,7 @@ class PhaseIntentionDiagnostic(BaseModel):
 
 
 class SelectedPhaseDiagnostic(BaseModel):
+    """Timing, score, possession, offside, and intentions for one selected phase."""
     id: str
     phase_type: str = Field(serialization_alias="phaseType")
     action_type: str = Field(serialization_alias="actionType")
@@ -96,6 +107,7 @@ class SelectedPhaseDiagnostic(BaseModel):
 
 
 class PlannerDiagnostics(BaseModel):
+    """Search and orchestration telemetry returned for explainability."""
     objective: Literal["SCORE_GOAL"] = "SCORE_GOAL"
     tactical_instruction: str | None = Field(
         default=None,
@@ -163,6 +175,7 @@ class PlannerDiagnostics(BaseModel):
 
 
 class AlternativePlan(BaseModel):
+    """A tactically distinct selectable animation and its comparison reason."""
     id: str
     label: str
     reason: str
@@ -172,6 +185,7 @@ class AlternativePlan(BaseModel):
 
 
 class AnimationResponse(BaseModel):
+    """Primary scheduled timeline, diagnostics, and optional alternatives."""
     duration: float = Field(ge=0)
     events: tuple[AnimationEvent, ...]
     diagnostics: PlannerDiagnostics | None = None

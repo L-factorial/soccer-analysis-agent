@@ -8,6 +8,7 @@ from app.spatial import move_toward, orientation_degrees
 
 @dataclass(frozen=True, slots=True)
 class OffsidePolicy:
+    """Numerical tolerance applied to release-time offside comparisons."""
     attacker_speed_cm_per_second: float = 650
     defender_speed_cm_per_second: float = 500
     turning_speed_degrees_per_second: float = 180

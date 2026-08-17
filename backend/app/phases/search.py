@@ -4,15 +4,22 @@ from dataclasses import dataclass
 from app.analysis import game_state_fingerprint
 from app.domain import GameState
 from app.planning import AnalysisPolicy, AnalyzedGameState, analyze_game_state
+from app.planning.beam import BeamPolicy, run_beam_search
 from app.phases.models import PhaseSimulationResult, TacticalPhase
 from app.phases.offside import OffsidePolicy, check_phase_offside
-from app.phases.scoring import PhaseScore, PhaseScoringPolicy, score_phase_result
+from app.phases.scoring import PhaseScore
+from app.phases.decision_rules import (
+    PhaseGenerationPolicy,
+    PhaseScoringPolicy,
+    generate_tactical_phases,
+    score_phase_result,
+)
 from app.phases.simulation import PhaseSimulationPolicy, simulate_tactical_phase
-from app.phases.templates import PhaseGenerationPolicy, generate_tactical_phases
 
 
 @dataclass(frozen=True, slots=True)
 class PhaseSearchPolicy:
+    """Bounds coordinated-phase search latency and future-score contribution."""
     maximum_depth: int = 4
     beam_width: int = 5
     maximum_play_duration_seconds: float = 30
@@ -32,6 +39,7 @@ class PhaseSearchPolicy:
 
 @dataclass(frozen=True, slots=True)
 class PhaseSearchStep:
+    """Accepted phase edge with simulation and explainable score components."""
     depth: int
     phase: TacticalPhase
     simulation: PhaseSimulationResult
@@ -41,6 +49,7 @@ class PhaseSearchStep:
 
 @dataclass(frozen=True, slots=True)
 class PhaseSearchNode:
+    """One beam node containing the full selected phase path to its state."""
     id: str
     analyzed_state: AnalyzedGameState
     depth: int
@@ -51,6 +60,7 @@ class PhaseSearchNode:
 
 @dataclass(frozen=True, slots=True)
 class PhaseSearchDiagnostics:
+    """Counters describing generation, rejection, and beam pruning."""
     generated_phase_count: int
     simulated_phase_count: int
     invalid_phase_count: int
@@ -65,6 +75,7 @@ class PhaseSearchDiagnostics:
 
 @dataclass(frozen=True, slots=True)
 class PhaseSearchResult:
+    """Analyzed root plus score-ordered surviving or terminal sequences."""
     root: AnalyzedGameState
     best_sequences: tuple[PhaseSearchNode, ...]
     diagnostics: PhaseSearchDiagnostics
@@ -87,104 +98,90 @@ def search_tactical_phases(
     scoring_policy: PhaseScoringPolicy = PhaseScoringPolicy(),
     offside_policy: OffsidePolicy = OffsidePolicy(),
 ) -> PhaseSearchResult:
+    """Adapt coordinated soccer phases to the shared generic beam engine."""
     root = initial if isinstance(initial, AnalyzedGameState) else analyze_game_state(initial, analysis_policy)
-    frontier = (
-        PhaseSearchNode("phase-node-000000", root, 0, 0, 0, ()),
-    )
-    terminal: list[PhaseSearchNode] = []
-    retained = 1
+    root_node = PhaseSearchNode("phase-node-000000", root, 0, 0, 0, ())
     generated = simulated = invalid = pruned_beam = pruned_duration = 0
     pruned_offside = pruned_duplicate = 0
     invalid_issues: Counter[str] = Counter()
-    reached_depth = 0
     next_id = 1
-    best_score_by_state = {game_state_fingerprint(root.game_state): 0.0}
 
-    for depth in range(1, search_policy.maximum_depth + 1):
+    def expand(parent: PhaseSearchNode, depth: int) -> tuple[PhaseSearchNode, ...]:
+        """Generate, validate, simulate, analyze, and score one frontier node."""
+        nonlocal generated, simulated, invalid, pruned_duration
+        nonlocal pruned_offside, next_id
         children: list[PhaseSearchNode] = []
-        for parent in frontier:
-            if parent.analyzed_state.game_state.scored_goal_id is not None:
-                terminal.append(parent)
-                continue
-            phases = generate_tactical_phases(
+        phases = generate_tactical_phases(
+            parent.analyzed_state.game_state,
+            parent.analyzed_state.action_candidates.feasible,
+            generation_policy,
+        )
+        generated += len(phases)
+        for phase in phases:
+            if check_phase_offside(
                 parent.analyzed_state.game_state,
-                parent.analyzed_state.action_candidates.feasible,
-                generation_policy,
-            )
-            generated += len(phases)
-            for phase in phases:
-                if check_phase_offside(
-                    parent.analyzed_state.game_state,
-                    phase,
-                    offside_policy,
-                ).offside:
-                    pruned_offside += 1
-                    continue
-                duration = parent.duration_seconds + phase.duration_seconds
-                if duration > search_policy.maximum_play_duration_seconds:
-                    pruned_duration += 1
-                    continue
-                simulation = simulate_tactical_phase(
-                    parent.analyzed_state.game_state,
-                    phase,
-                    simulation_policy,
-                )
-                simulated += 1
-                if not simulation.validation.valid:
-                    invalid += 1
-                    invalid_issues.update(
-                        issue.code.value for issue in simulation.validation.issues
-                    )
-                    continue
-                analyzed = analyze_game_state(simulation.resulting_state, analysis_policy)
-                score = score_phase_result(simulation, scoring_policy)
-                discounted = search_policy.score_discount ** (depth - 1) * score.total
-                cumulative = parent.cumulative_score + discounted
-                key = game_state_fingerprint(analyzed.game_state)
-                if best_score_by_state.get(key, float("-inf")) >= cumulative:
-                    pruned_duplicate += 1
-                    continue
-                children.append(
-                    PhaseSearchNode(
-                        id=f"phase-node-{next_id:06d}",
-                        analyzed_state=analyzed,
-                        depth=depth,
-                        duration_seconds=duration,
-                        cumulative_score=cumulative,
-                        steps=(*parent.steps, PhaseSearchStep(depth, phase, simulation, score, discounted)),
-                    )
-                )
-                next_id += 1
-
-        if not children:
-            break
-        unique: list[PhaseSearchNode] = []
-        seen: set[str] = set()
-        for node in sorted(children, key=_node_order):
-            key = game_state_fingerprint(node.analyzed_state.game_state)
-            if key in seen:
-                pruned_duplicate += 1
+                phase,
+                offside_policy,
+            ).offside:
+                pruned_offside += 1
                 continue
-            seen.add(key)
-            unique.append(node)
-        if len(unique) > search_policy.beam_width:
-            pruned_beam += len(unique) - search_policy.beam_width
-        capacity = search_policy.maximum_retained_nodes - retained
-        frontier = tuple(unique[: min(search_policy.beam_width, max(0, capacity))])
-        for node in frontier:
-            best_score_by_state[game_state_fingerprint(node.analyzed_state.game_state)] = node.cumulative_score
-        retained += len(frontier)
-        reached_depth = depth
-        if not frontier or retained >= search_policy.maximum_retained_nodes:
-            break
+            duration = parent.duration_seconds + phase.duration_seconds
+            if duration > search_policy.maximum_play_duration_seconds:
+                pruned_duration += 1
+                continue
+            simulation = simulate_tactical_phase(
+                parent.analyzed_state.game_state,
+                phase,
+                simulation_policy,
+            )
+            simulated += 1
+            if not simulation.validation.valid:
+                invalid += 1
+                invalid_issues.update(
+                    issue.code.value for issue in simulation.validation.issues
+                )
+                continue
+            analyzed = analyze_game_state(simulation.resulting_state, analysis_policy)
+            score = score_phase_result(simulation, scoring_policy)
+            discounted = search_policy.score_discount ** (depth - 1) * score.total
+            children.append(
+                PhaseSearchNode(
+                    id=f"phase-node-{next_id:06d}",
+                    analyzed_state=analyzed,
+                    depth=depth,
+                    duration_seconds=duration,
+                    cumulative_score=parent.cumulative_score + discounted,
+                    steps=(*parent.steps, PhaseSearchStep(depth, phase, simulation, score, discounted)),
+                )
+            )
+            next_id += 1
+        return tuple(children)
 
-    ordered = tuple(sorted((*terminal, *frontier), key=_node_order))
+    beam = run_beam_search(
+        root_node,
+        BeamPolicy(
+            search_policy.maximum_depth,
+            search_policy.beam_width,
+            search_policy.maximum_retained_nodes,
+        ),
+        expand=expand,
+        state_key=lambda node: game_state_fingerprint(node.analyzed_state.game_state),
+        cumulative_score=lambda node: node.cumulative_score,
+        node_order=_node_order,
+        is_terminal=lambda node: node.analyzed_state.game_state.scored_goal_id is not None,
+        depth_of=lambda node: node.depth,
+        retain_exhausted_parents=False,
+        fallback_to_previous_frontier=True,
+    )
+    pruned_beam = beam.pruned_by_beam_count
+    pruned_duplicate = beam.pruned_as_duplicate_count
     return PhaseSearchResult(
         root=root,
-        best_sequences=ordered,
+        best_sequences=beam.final_nodes,
         diagnostics=PhaseSearchDiagnostics(
             generated, simulated, invalid, pruned_beam, pruned_duration,
-            pruned_offside, pruned_duplicate, retained, reached_depth,
+            pruned_offside, pruned_duplicate, beam.retained_node_count,
+            beam.reached_depth,
             tuple(sorted(invalid_issues.items())),
         ),
     )

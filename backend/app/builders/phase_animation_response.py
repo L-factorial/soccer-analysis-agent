@@ -11,6 +11,8 @@ from app.models.animation_response import (
 )
 from app.models.position import Position
 from app.phases import PhaseSearchNode
+# Presentation-time turning rate. Simulation already determines whether the
+# phase is feasible; the scheduler uses this to place TURN before RUN/ball events.
 TURNING_SPEED_DEGREES_PER_SECOND = 180
 
 

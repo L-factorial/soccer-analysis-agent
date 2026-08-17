@@ -16,6 +16,7 @@ from app.spatial import EPSILON, distance_to_goal, forward_progress
 
 
 class ActionType(StrEnum):
+    """Atomic actions that analysis may expose to either planner."""
     MOVE = "MOVE"
     RUN = "RUN"
     MOVE_WITH_BALL = "MOVE_WITH_BALL"

@@ -2,6 +2,7 @@ import math
 
 from app.domain import Vector2
 
+# Absolute tolerance for zero-length vectors and floating-point geometry checks.
 EPSILON = 1e-9
 
 

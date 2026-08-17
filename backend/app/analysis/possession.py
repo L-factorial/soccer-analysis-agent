@@ -11,6 +11,7 @@ class InvalidPossessionPolicyError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class PossessionPolicy:
+    """Distance and ambiguity thresholds for assigning ball control."""
     control_radius_cm: float = 100
     contested_radius_cm: float = 150
     ambiguity_distance_cm: float = 30
@@ -34,6 +35,7 @@ class PossessionPolicy:
 
 
 class PossessionReason(StrEnum):
+    """Explainable reason associated with a possession result."""
     CLEAR_CONTROL = "clear_control"
     NO_PLAYERS = "no_players"
     OUTSIDE_CONTROL_RADIUS = "outside_control_radius"

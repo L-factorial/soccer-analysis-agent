@@ -8,6 +8,11 @@ from app.phases.models import PhaseSimulationResult, TacticalPhase
 
 @dataclass(frozen=True, slots=True)
 class PhaseScoringPolicy:
+    """Explainable weights for ranking valid simulated tactical phases.
+
+    These weights affect preference, not physical validity. Goal reward is large
+    enough that a valid scoring branch ranks above ordinary field progression.
+    """
     forward_progress_weight: float = 35
     goal_proximity_weight: float = 25
     possession_weight: float = 30
@@ -24,6 +29,7 @@ class PhaseScoringPolicy:
 
 @dataclass(frozen=True, slots=True)
 class PhaseScore:
+    """Additive component breakdown used to explain a phase's total score."""
     phase: TacticalPhase
     simulation: PhaseSimulationResult
     forward_progress: float
@@ -51,6 +57,7 @@ def score_phase_result(
     simulation: PhaseSimulationResult,
     policy: PhaseScoringPolicy = PhaseScoringPolicy(),
 ) -> PhaseScore:
+    """Score a completed simulation without changing its resulting state."""
     phase = simulation.phase
     state = simulation.resulting_state
     action = phase.primary_action

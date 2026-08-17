@@ -6,6 +6,7 @@ from app.phases import PhaseScoringPolicy, PhaseSearchPolicy
 
 @dataclass(frozen=True, slots=True)
 class TacticalInstructionPolicy:
+    """Search and scoring policies derived from deterministic prompt keywords."""
     search: PhaseSearchPolicy
     scoring: PhaseScoringPolicy
     applied_directives: tuple[str, ...]

@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class TacticalObjective(StrEnum):
+    """Bounded strategic objectives the LLM may select."""
     BALANCED = "BALANCED"
     FAST_ATTACK = "FAST_ATTACK"
     RETAIN_POSSESSION = "RETAIN_POSSESSION"
@@ -13,6 +14,7 @@ class TacticalObjective(StrEnum):
 
 
 class TacticalTempo(StrEnum):
+    """Intent-level pacing preference translated into deterministic policies."""
     PATIENT = "PATIENT"
     BALANCED = "BALANCED"
     FAST = "FAST"
@@ -40,6 +42,7 @@ class TacticalIntent(BaseModel):
 
 
 class TacticalObservation(BaseModel):
+    """Compact analyzed state sent to the LLM; never the mutable backend state."""
     instruction: str
     attacking_team_id: str = Field(alias="attackingTeamId")
     ball_carrier_id: str = Field(alias="ballCarrierId")
@@ -51,12 +54,14 @@ class TacticalObservation(BaseModel):
 
 
 class PlanEvaluation(BaseModel):
+    """Deterministic post-search assessment used by the revision loop."""
     goal_scored: bool = Field(alias="goalScored")
     instruction_alignment: float = Field(alias="instructionAlignment", ge=0, le=1)
     reasons: list[str]
 
 
 class AgentPlanningMetadata(BaseModel):
+    """Serializable record of orchestration mode, calls, intent, and fallback."""
     mode: Literal[
         "DETERMINISTIC", "AGENTIC", "TOOL_AGENT", "AGENTIC_FALLBACK"
     ]

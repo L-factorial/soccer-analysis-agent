@@ -12,6 +12,7 @@ class InvalidScoringPolicyError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class ScoringPolicy:
+    """Legacy action/state ranking weights; does not affect feasibility."""
     forward_progress_weight: float = 30
     goal_proximity_weight: float = 20
     target_space_weight: float = 10

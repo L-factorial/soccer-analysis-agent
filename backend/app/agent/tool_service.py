@@ -16,6 +16,8 @@ from app.phases import (
 from app.planning import AnalyzedGameState
 
 
+# Tool mode may choose search constraints and select returned sequence IDs, but
+# the deterministic backend remains the only component that creates sequences.
 TOOL_AGENT_PROMPT = """You are a bounded soccer planning agent. Use the search tool
 to find one plan that follows the coach's instruction and, when useful, one or two
 meaningfully different alternatives. LEFT and RIGHT are always relative to the
@@ -30,6 +32,8 @@ score or shorter duration; state that measurable advantage and any instruction
 trade-off in the reason. Finish by calling select_plans exactly once."""
 
 
+# JSON schemas are constants so the model-facing contract is reviewable and
+# cannot silently diverge between iterations of one agent run.
 SEARCH_TOOL = {
     "type": "function",
     "name": "search_tactical_sequences",

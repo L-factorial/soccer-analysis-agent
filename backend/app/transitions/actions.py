@@ -31,6 +31,7 @@ class InvalidTransitionPolicyError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class TransitionPolicy:
+    """Legacy action-transition controls for teammate/defender reactions."""
     defender_reaction_speed_cm_per_second: float = 500
     enable_defender_reaction: bool = True
 

@@ -5,6 +5,8 @@ from app.agent.config import AgentConfig
 from app.agent.models import PlanEvaluation, TacticalIntent, TacticalObservation
 
 
+# The intent-mode model is constrained to tactical preferences. Structured
+# parsing below prevents it from emitting executable state transitions.
 SYSTEM_PROMPT = """You are a soccer tactical director. Convert the coach's instruction
 and analyzed field observation into one supported tactical intent. Choose strategy only.
 Never invent player IDs, space IDs, action types, coordinates, or game rules. The

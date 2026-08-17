@@ -27,6 +27,7 @@ from app.transitions import ActionTransition, apply_action_candidate
 
 @dataclass(frozen=True, slots=True)
 class AnalysisPolicy:
+    """Groups all deterministic sub-analysis policies for one state snapshot."""
     possession: PossessionPolicy = PossessionPolicy()
     pressure: PressurePolicy = PressurePolicy()
     target_zones: TargetZonePolicy = TargetZonePolicy()
@@ -47,6 +48,7 @@ class AnalysisDiagnostics:
 
 @dataclass(frozen=True, slots=True)
 class AnalyzedGameState:
+    """Runtime state enriched with possession, context, zones, and actions."""
     game_state: GameState
     state_fingerprint: str
     possession: PossessionAnalysis

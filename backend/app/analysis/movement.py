@@ -24,6 +24,7 @@ class InvalidMovementPolicyError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class MovementPolicy:
+    """Physical movement limits in centimeters, seconds, and degrees."""
     move_speed_cm_per_second: float = 400
     run_speed_cm_per_second: float = 650
     move_with_ball_speed_cm_per_second: float = 500
@@ -46,18 +47,21 @@ class MovementPolicy:
 
 
 class MovementType(StrEnum):
+    """Movement families with different permitted speeds and ball ownership."""
     MOVE = "MOVE"
     RUN = "RUN"
     MOVE_WITH_BALL = "MOVE_WITH_BALL"
 
 
 class DribbleDirection(StrEnum):
+    """Relative target directions sampled when generating dribble candidates."""
     STRAIGHT = "STRAIGHT"
     CUT_LEFT = "CUT_LEFT"
     CUT_RIGHT = "CUT_RIGHT"
 
 
 class MovementIssueCode(StrEnum):
+    """Stable reasons a proposed movement candidate is infeasible."""
     DESTINATION_OUTSIDE_FIELD = "destination_outside_field"
     INVALID_DURATION = "invalid_duration"
     MAXIMUM_DURATION_EXCEEDED = "maximum_duration_exceeded"

@@ -1,6 +1,8 @@
 from app.domain.game_state import PlayerState
 
 
+# Version-one layouts identify goalkeepers by shirt number because the request
+# schema does not yet expose an explicit player-position/role field.
 GOALKEEPER_SHIRT_NUMBER = 1
 
 

@@ -33,6 +33,8 @@ def phase_state(
     include_shape_attacker: bool = False,
     include_additional_shape_players: bool = False,
     include_attacking_goalkeeper: bool = False,
+    include_advanced_fast_attacker: bool = False,
+    include_two_wide_fast_attackers: bool = False,
 ):
     payload = valid_payload()
     field = payload["fieldConfiguration"]
@@ -58,6 +60,16 @@ def phase_state(
         field["players"].append(
             player("team1-gk", "team1", 1, 600, 4500)
         )
+    if include_advanced_fast_attacker:
+        fast_attacker = player("team1-6", "team1", 4, 6200, 8200)
+        fast_attacker["speedCategory"] = "FAST"
+        field["players"].append(fast_attacker)
+    if include_two_wide_fast_attackers:
+        high_runner = player("team1-6", "team1", 4, 6200, 8200)
+        high_runner["speedCategory"] = "FAST"
+        low_runner = player("team1-7", "team1", 5, 6200, 2000)
+        low_runner["speedCategory"] = "SUPER_FAST"
+        field["players"].extend((high_runner, low_runner))
     if include_additional_shape_players:
         field["players"].extend(
             (
@@ -78,6 +90,54 @@ def phase_state(
 
 
 class TacticalPhaseGenerationTests(unittest.TestCase):
+    def test_fast_wide_runners_keep_their_natural_lanes(self) -> None:
+        analyzed = phase_state(include_two_wide_fast_attackers=True)
+        phases = generate_tactical_phases(
+            analyzed.game_state,
+            analyzed.action_candidates.feasible,
+        )
+        targets = {
+            intention.player_id: intention.target.y
+            for phase in phases
+            if phase.template_type == PhaseTemplateType.DRIBBLE_WITH_SUPPORT
+            and phase.primary_action.destination == Vector2(2750, 4500)
+            for intention in phase.attacking_intentions
+            if intention.player_id in {"team1-6", "team1-7"}
+            and intention.intention_type.value == "FORWARD_RUN"
+        }
+
+        self.assertGreater(targets["team1-6"], targets["team1-7"])
+        self.assertLess(
+            abs(8200 - targets["team1-6"])
+            + abs(2000 - targets["team1-7"]),
+            abs(8200 - targets["team1-7"])
+            + abs(2000 - targets["team1-6"]),
+        )
+
+    def test_advanced_fast_attacker_runs_forward_instead_of_dropping_to_support(self) -> None:
+        analyzed = phase_state(include_advanced_fast_attacker=True)
+        phases = generate_tactical_phases(
+            analyzed.game_state,
+            analyzed.action_candidates.feasible,
+        )
+        fast_player_intentions = tuple(
+            intention
+            for phase in phases
+            if phase.template_type == PhaseTemplateType.DRIBBLE_WITH_SUPPORT
+            for intention in phase.attacking_intentions
+            if intention.player_id == "team1-6"
+        )
+
+        self.assertTrue(fast_player_intentions)
+        self.assertNotIn(
+            "SUPPORT_BALL",
+            {intention.intention_type.value for intention in fast_player_intentions},
+        )
+        self.assertIn(
+            "FORWARD_RUN",
+            {intention.intention_type.value for intention in fast_player_intentions},
+        )
+
     def test_generates_decoy_and_passing_lane_tactical_alternatives(self) -> None:
         analyzed = phase_state(
             include_shape_defender=True,
@@ -178,6 +238,11 @@ class TacticalPhaseGenerationTests(unittest.TestCase):
             for phase in phases
             if phase.template_type == PhaseTemplateType.DRIBBLE_WITH_SUPPORT
         )
+        for phase in dribble_phases:
+            assigned_players = [
+                intention.player_id for intention in phase.attacking_intentions
+            ]
+            self.assertEqual(len(assigned_players), len(set(assigned_players)))
         support_targets = {
             (intention.target.x, intention.target.y)
             for phase in dribble_phases
@@ -197,6 +262,20 @@ class TacticalPhaseGenerationTests(unittest.TestCase):
         )
         self.assertTrue(space_phase.attacking_intentions)
         self.assertEqual(len(space_phase.defensive_intentions), 2)
+        receiver_intention = next(
+            intention
+            for intention in space_phase.attacking_intentions
+            if intention.player_id == space_phase.primary_action.receiver_id
+        )
+        self.assertEqual(receiver_intention.start_offset_seconds, 0)
+        self.assertTrue(
+            any(
+                intention.start_offset_seconds > 0
+                for intention in space_phase.defensive_intentions
+                if intention.intention_type
+                != DefensiveIntentionType.PRESS_BALL_CARRIER
+            )
+        )
         with self.assertRaises(FrozenInstanceError):
             space_phase.duration_seconds = 99
 

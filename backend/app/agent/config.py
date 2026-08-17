@@ -8,6 +8,7 @@ def _enabled(value: str | None) -> bool:
 
 
 class PlanningMode(StrEnum):
+    """Mutually exclusive orchestration modes selected from environment config."""
     DETERMINISTIC = "DETERMINISTIC"
     LLM_INTENT = "LLM_INTENT"
     LLM_TOOL_AGENT = "LLM_TOOL_AGENT"
@@ -15,6 +16,11 @@ class PlanningMode(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class AgentConfig:
+    """Validated environment-backed limits for LLM orchestration.
+
+    Search and simulation rules do not live here; this config only bounds model
+    calls, revisions, tool iterations, timeouts, and tool-requested search size.
+    """
     """Runtime settings; disabled is the safe default."""
 
     enabled: bool = False

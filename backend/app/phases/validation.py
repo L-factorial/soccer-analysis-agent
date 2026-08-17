@@ -13,6 +13,7 @@ from app.phases.models import (
 
 @dataclass(frozen=True, slots=True)
 class PhaseValidationPolicy:
+    """Static duration, arrival, field-boundary, and possession tolerances."""
     maximum_phase_duration_seconds: float = 12
     attacker_speed_cm_per_second: float = 650
     arrival_tolerance_cm: float = 25

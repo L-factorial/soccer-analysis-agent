@@ -13,11 +13,13 @@ class Vector2:
 
 
 class AttackingDirection(StrEnum):
+    """Direction in which progress toward a team's opponent goal is measured."""
     POSITIVE_X = "positive_x"
     NEGATIVE_X = "negative_x"
 
 
 class PossessionStatus(StrEnum):
+    """Mutually exclusive result of possession analysis for one snapshot."""
     UNRESOLVED = "unresolved"
     CONTROLLED = "controlled"
     LOOSE = "loose"
@@ -25,6 +27,7 @@ class PossessionStatus(StrEnum):
 
 
 class PlayerSpeedCategory(StrEnum):
+    """UI-selectable multiplier applied to movement speeds, not tactical priority."""
     BASELINE = "BASELINE"
     FAST = "FAST"
     SUPER_FAST = "SUPER_FAST"
@@ -39,11 +42,13 @@ class PlayerSpeedCategory(StrEnum):
 
 
 class TargetZoneShape(StrEnum):
+    """Geometry supported by both submitted and computed tactical zones."""
     CIRCULAR = "circular"
     RECTANGULAR = "rectangular"
 
 
 class TargetZoneSource(StrEnum):
+    """Provenance used to distinguish coach input from engine-derived zones."""
     USER_DEFINED = "user_defined"
     ATTACKING_GOAL = "attacking_goal"
     DYNAMIC = "dynamic"
@@ -51,6 +56,7 @@ class TargetZoneSource(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class FieldState:
+    """Immutable field dimensions; length is X and width is Y, in `unit`."""
     field_type: FieldType
     length: float
     width: float
@@ -59,6 +65,7 @@ class FieldState:
 
 @dataclass(frozen=True, slots=True)
 class GoalState:
+    """Normalized goal geometry derived from the submitted four-point polygon."""
     id: str
     name: str
     side: GoalSide
@@ -70,6 +77,7 @@ class GoalState:
 
 @dataclass(frozen=True, slots=True)
 class TeamState:
+    """A team with resolved defended/attacking goals and attack direction."""
     id: str
     name: str
     color: str
@@ -80,6 +88,7 @@ class TeamState:
 
 @dataclass(frozen=True, slots=True)
 class PlayerState:
+    """One player's physical snapshot. Position is centimeters, facing is degrees."""
     id: str
     name: str
     number: int
@@ -92,6 +101,7 @@ class PlayerState:
 
 @dataclass(frozen=True, slots=True)
 class BallState:
+    """Ball snapshot with scalar direction/speed and derived velocity vector."""
     position: Vector2
     direction: float
     speed: float
@@ -100,6 +110,7 @@ class BallState:
 
 @dataclass(frozen=True, slots=True)
 class TargetZoneState:
+    """A bounded space that may be coach-defined, goal-derived, or dynamic."""
     id: str
     name: str
     shape: TargetZoneShape
@@ -114,6 +125,7 @@ class TargetZoneState:
 
 @dataclass(frozen=True, slots=True)
 class PossessionState:
+    """Controller/team when controlled, or contestant IDs when ambiguous."""
     status: PossessionStatus
     player_id: str | None
     team_id: str | None
@@ -122,6 +134,11 @@ class PossessionState:
 
 @dataclass(frozen=True, slots=True)
 class GameState:
+    """Complete immutable world snapshot consumed and produced by simulation.
+
+    `scored_goal_id` and `scoring_team_id` form the terminal scoring marker and
+    should either both be absent or both describe the same completed shot.
+    """
     time_seconds: float
     field: FieldState
     teams_by_id: Mapping[str, TeamState]

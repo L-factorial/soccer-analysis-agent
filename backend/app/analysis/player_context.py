@@ -22,6 +22,7 @@ class InvalidPressurePolicyError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class PressurePolicy:
+    """Opponent-distance thresholds used to classify pressure on a player."""
     immediate_pressure_radius_cm: float = 150
     nearby_pressure_radius_cm: float = 400
     support_radius_cm: float = 600
@@ -40,6 +41,7 @@ class PressurePolicy:
 
 
 class PressureLevel(StrEnum):
+    """Human-readable buckets derived from the continuous pressure score."""
     NONE = "none"
     LOW = "low"
     MEDIUM = "medium"
@@ -47,6 +49,7 @@ class PressureLevel(StrEnum):
 
 
 class PossessionRole(StrEnum):
+    """Player relationship to the currently resolved possession state."""
     BALL_HOLDER = "ball_holder"
     CONTESTING = "contesting"
     TEAM_IN_POSSESSION = "team_in_possession"

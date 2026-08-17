@@ -14,6 +14,7 @@ from app.spatial import distance
 
 @dataclass(frozen=True, slots=True)
 class DynamicSpacePolicy:
+    """Sampling and clearance bounds for engine-generated open spaces."""
     maximum_spaces_per_team: int = 3
     minimum_defender_clearance_cm: float = 700
     minimum_separation_cm: float = 1400

@@ -12,6 +12,7 @@ from app.planning import SearchSequence
 from app.models.animation_response import PlannerDiagnostics
 
 
+# Cap purely visual pauses so a valid plan does not appear frozen in playback.
 MAXIMUM_VISIBLE_HOLD_SECONDS = 1.5
 
 

@@ -26,6 +26,7 @@ class UnknownTeamError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class TargetZonePolicy:
+    """Geometric tolerances for deciding whether entities occupy target zones."""
     attacker_speed_cm_per_second: float = 650
     defender_speed_cm_per_second: float = 650
     reachable_horizon_seconds: float = 5
@@ -47,6 +48,7 @@ class TargetZonePolicy:
 
 
 class TargetZoneStatus(StrEnum):
+    """Whether a target zone is available, occupied, or otherwise contested."""
     AVAILABLE = "available"
     CONTESTED = "contested"
     DEFENDER_CONTROLLED = "defender_controlled"

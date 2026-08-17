@@ -24,6 +24,11 @@ from app.phases.interception import earliest_linear_interception
 
 @dataclass(frozen=True, slots=True)
 class PhaseSimulationPolicy:
+    """Physical timing and movement bounds used while executing a phase.
+
+    Speeds are centimeters/second, turning is degrees/second, and tolerances are
+    centimeters or seconds according to the field name.
+    """
     attacker_speed_cm_per_second: float = 650
     defender_speed_cm_per_second: float = 500
     tracking_distance_cm: float = 250

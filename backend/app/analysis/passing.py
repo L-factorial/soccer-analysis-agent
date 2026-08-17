@@ -26,6 +26,7 @@ class InvalidPassPolicyError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class PassPolicy:
+    """Ball speed, timing, pressure, and interception tolerances for passes."""
     ball_speed_cm_per_second: float = 1800
     maximum_ball_speed_cm_per_second: float = 3000
     player_speed_cm_per_second: float = 650
@@ -65,11 +66,13 @@ class PassPolicy:
 
 
 class PassType(StrEnum):
+    """Direct-to-player versus into-space pass semantics."""
     PASS_TO_PLAYER = "PASS_TO_PLAYER"
     PASS_TO_SPACE = "PASS_TO_SPACE"
 
 
 class PassIssueCode(StrEnum):
+    """Stable reasons a pass analysis is infeasible."""
     PASSER_DOES_NOT_CONTROL_BALL = "passer_does_not_control_ball"
     POSSESSION_UNRESOLVED = "possession_unresolved"
     POSSESSION_CONTESTED = "possession_contested"

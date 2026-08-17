@@ -15,6 +15,7 @@ from app.spatial import (
 
 @dataclass(frozen=True, slots=True)
 class ShotPolicy:
+    """Range, ball-speed, and geometric constraints for shot candidates."""
     ball_speed_cm_per_second: float = 2400
     defender_speed_cm_per_second: float = 500
     maximum_shot_distance_cm: float = 4000
@@ -37,6 +38,7 @@ class ShotPolicy:
 
 
 class ShotIssueCode(StrEnum):
+    """Stable reasons a shot candidate cannot be attempted."""
     SHOOTER_DOES_NOT_CONTROL_BALL = "shooter_does_not_control_ball"
     SHOT_OUT_OF_RANGE = "shot_out_of_range"
     SHOT_CAN_BE_INTERCEPTED = "shot_can_be_intercepted"
