@@ -4,10 +4,12 @@ from types import SimpleNamespace
 from fastapi import HTTPException
 
 from app.api.field_configurations import (
-    _select_distinct_solutions,
-    _sequence_tactical_signature,
     analyze_field_configuration,
     receive_field_configuration,
+)
+from app.game_engine import (
+    select_distinct_solutions,
+    sequence_tactical_signature,
 )
 from app.models.field_submission import FieldSubmission
 from app.validation import FieldSubmissionValidationError, validate_field_submission
@@ -112,11 +114,11 @@ class AlternativeRouteSelectionTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            _sequence_tactical_signature(primary),
-            _sequence_tactical_signature(near_duplicate),
+            sequence_tactical_signature(primary),
+            sequence_tactical_signature(near_duplicate),
         )
         self.assertEqual(
-            _select_distinct_solutions(primary, (near_duplicate,), 2),
+            select_distinct_solutions(primary, (near_duplicate,), 2),
             (primary,),
         )
 
@@ -125,7 +127,7 @@ class AlternativeRouteSelectionTests(unittest.TestCase):
         opposite_channel = tactical_sequence("opposite", ((5000, 7400),))
 
         self.assertEqual(
-            _select_distinct_solutions(primary, (opposite_channel,), 2),
+            select_distinct_solutions(primary, (opposite_channel,), 2),
             (primary, opposite_channel),
         )
 

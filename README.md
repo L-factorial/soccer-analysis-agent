@@ -6,9 +6,15 @@
 - An asynchronous AI layer generates continuous commentary and detailed analysis for each scheduled route.
 - Directing beam search through free-form prompt instructions is a work in progress; currently, only a limited deterministic keyword adapter is supported.
 
-Detailed backend architecture, state, event, policy, scoring, search, and
-execution-flow documentation is available in
-[backend/ARCHITECTURE.md](backend/ARCHITECTURE.md).
+## Technical documentation
+
+- [Backend architecture](backend/ARCHITECTURE.md) — request flow, planner,
+  tactical phases, simulation, scoring policies, deterministic beam search,
+  current search configuration, scheduler, incoming field JSON, immutable game
+  state mapping, and the frontend animation-response JSON.
+- [Game-engine code guide](backend/app/game_engine/README.md) — the separated
+  deterministic engine boundary, open-space algorithm, package ownership, and
+  direct links to implementation files.
 
 The project is a monorepo containing an Expo/React Native frontend and a FastAPI
 backend.

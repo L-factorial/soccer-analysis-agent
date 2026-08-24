@@ -1,7 +1,7 @@
 import unittest
 
+from app.game_engine import interpret_tactical_instruction
 from app.phases import PhaseScoringPolicy, PhaseSearchPolicy
-from app.tactical_instruction import interpret_tactical_instruction
 
 
 class TacticalInstructionTests(unittest.TestCase):
