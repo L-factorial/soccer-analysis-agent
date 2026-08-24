@@ -15,10 +15,13 @@ from app.spatial import distance
 @dataclass(frozen=True, slots=True)
 class DynamicSpacePolicy:
     """Sampling and clearance bounds for engine-generated open spaces."""
-    maximum_spaces_per_team: int = 3
+    maximum_spaces_per_team: int = 5
     minimum_defender_clearance_cm: float = 700
-    minimum_separation_cm: float = 1400
-    minimum_radius_cm: float = 300
+    # Keep distinct spaces from overlapping excessively. This is deliberately
+    # a policy field so experiments can tune it without changing discovery
+    # logic, while the production default enforces 18 metres.
+    minimum_separation_cm: float = 1800
+    minimum_radius_cm: float = 500
     maximum_radius_cm: float = 800
     maximum_attacker_distance_cm: float = 4500
 

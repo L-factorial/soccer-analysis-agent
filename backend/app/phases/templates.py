@@ -10,7 +10,12 @@ from app.domain import (
     Vector2,
     is_goalkeeper,
 )
-from app.spatial import distance, move_toward, orientation_degrees
+from app.spatial import (
+    distance,
+    move_toward,
+    orientation_degrees,
+    turn_duration_seconds,
+)
 from app.phases.models import (
     AttackingIntention,
     AttackingIntentionType,
@@ -49,6 +54,24 @@ class PhaseGenerationPolicy:
     defensive_shape_reaction_seconds: float = 0.35
     goalkeeper_reaction_seconds: float = 0.15
     support_ahead_tolerance_cm: float = 300
+    goal_side_cover_distance_cm: float = 900
+    minimum_cover_depth_cm: float = 400
+    central_cover_half_width_cm: float = 2500
+    crossing_trigger_progress_ratio: float = 0.65
+    crossing_wide_channel_ratio: float = 0.25
+    crossing_box_depth_cm: float = 1200
+    crossing_post_inset_cm: float = 300
+    # Advanced central dribbles still need a player to stretch the defensive
+    # block. The width provider advances without being pulled into the carrier's
+    # lane, leaving distinct outside and inside passing options.
+    width_provider_progress_ratio: float = 0.65
+    width_provider_forward_cm: float = 900
+    threat_aware_shape_progress_ratio: float = 0.60
+    threat_aware_corridor_weight: float = 0.65
+    shot_rebound_depth_cm: float = 800
+    shot_rebound_post_inset_cm: float = 300
+    shot_rebound_reaction_seconds: float = 0.20
+    shot_secondary_block_fraction: float = 0.35
 
 
 def _nearest(
@@ -76,6 +99,22 @@ def _target_progress(
 ) -> float:
     direction = state.teams_by_id[team_id].attacking_direction
     return target.x if direction == AttackingDirection.POSITIVE_X else -target.x
+
+
+def _attacking_progress_ratio(
+    state: GameState,
+    attacking_team_id: str,
+    target: Vector2,
+) -> float:
+    """Normalize a position from the team's own goal (0) to opponent goal (1)."""
+    team = state.teams_by_id[attacking_team_id]
+    defended_goal = state.goals_by_id[team.defended_goal_id]
+    attacking_goal = state.goals_by_id[team.attacking_goal_id]
+    origin = _target_progress(state, attacking_team_id, defended_goal.center)
+    end = _target_progress(state, attacking_team_id, attacking_goal.center)
+    if end == origin:
+        return 0
+    return (_target_progress(state, attacking_team_id, target) - origin) / (end - origin)
 
 
 def _off_ball_player_for_role(
@@ -172,6 +211,41 @@ def _bounded_target(state: GameState, target: Vector2) -> Vector2:
     )
 
 
+def _preserve_natural_width(
+    state: GameState,
+    player: PlayerState,
+    target: Vector2,
+) -> Vector2:
+    """Do not pull a runner inward when their current lane is already wider.
+
+    A target remains free to widen a player, but it may not reduce that player's
+    distance from the field centre. This keeps an existing winger available as
+    an outlet instead of making every forward run converge around the carrier.
+    """
+    centre_y = state.field.width / 2
+    if abs(player.position.y - centre_y) > abs(target.y - centre_y):
+        return Vector2(target.x, player.position.y)
+    return target
+
+
+def _width_provider_target(
+    state: GameState,
+    player: PlayerState,
+    policy: PhaseGenerationPolicy,
+) -> Vector2:
+    """Advance the naturally widest teammate while retaining their touchline lane."""
+    direction = state.teams_by_id[player.team_id].attacking_direction
+    forward = (
+        policy.width_provider_forward_cm
+        if direction == AttackingDirection.POSITIVE_X
+        else -policy.width_provider_forward_cm
+    )
+    return _bounded_target(
+        state,
+        Vector2(player.position.x + forward, player.position.y),
+    )
+
+
 def _decoy_target(
     state: GameState,
     runner: PlayerState,
@@ -212,8 +286,11 @@ def _turn_duration_seconds(
     turning_speed_degrees_per_second: float,
 ) -> float:
     target_orientation = orientation_degrees(player.position, target)
-    difference = abs((target_orientation - player.orientation) % 360)
-    return min(difference, 360 - difference) / turning_speed_degrees_per_second
+    return turn_duration_seconds(
+        player.orientation,
+        target_orientation,
+        turning_speed_degrees_per_second,
+    )
 
 
 def _hold_shape_target(
@@ -223,9 +300,40 @@ def _hold_shape_target(
     lane_y: float,
     policy: PhaseGenerationPolicy,
 ) -> Vector2:
-    """Shift an unassigned defender with the play without collapsing shape."""
+    """Shift an unassigned defender without abandoning the danger corridor.
+
+    In deeper areas, lateral formation lanes preserve width. Once the threat is
+    advanced, blindly preserving a wide lane can make a weak-side defender run
+    away from an incoming receiver and then reverse toward goal on the shot.
+    Final-third defenders therefore compress toward the defended goal corridor,
+    and their assigned target may never widen their current lateral separation
+    from that corridor.
+    """
     team = state.teams_by_id[defender.team_id]
     goal = state.goals_by_id[team.defended_goal_id]
+    attacking_team = next(
+        candidate
+        for candidate in state.teams_by_id.values()
+        if candidate.id != defender.team_id
+    )
+    target_lane_y = lane_y
+    if (
+        _attacking_progress_ratio(state, attacking_team.id, ball_target)
+        >= policy.threat_aware_shape_progress_ratio
+    ):
+        compressed_lane_y = (
+            lane_y * (1 - policy.threat_aware_corridor_weight)
+            + goal.center.y * policy.threat_aware_corridor_weight
+        )
+        # Compression must improve or retain corridor coverage. This explicit
+        # clamp protects against an unoccupied formation lane lying even wider
+        # than the defender's current weak-side position.
+        target_lane_y = (
+            compressed_lane_y
+            if abs(compressed_lane_y - goal.center.y)
+            <= abs(defender.position.y - goal.center.y)
+            else defender.position.y
+        )
     current_weight = 1 - (
         policy.hold_shape_ball_weight + policy.hold_shape_goal_weight
     )
@@ -235,7 +343,7 @@ def _hold_shape_target(
             + ball_target.x * policy.hold_shape_ball_weight
             + goal.center.x * policy.hold_shape_goal_weight
         ),
-        y=lane_y,
+        y=target_lane_y,
     )
     return _bounded_target(
         state,
@@ -244,6 +352,77 @@ def _hold_shape_target(
             shape_anchor,
             policy.maximum_hold_shape_shift_cm,
         ),
+    )
+
+
+def _goal_side_cover_target(
+    state: GameState,
+    defending_team_id: str,
+    threat: Vector2,
+    policy: PhaseGenerationPolicy,
+) -> Vector2:
+    """Place the covering defender between the threat and the defended goal."""
+    goal = state.goals_by_id[state.teams_by_id[defending_team_id].defended_goal_id]
+    return move_toward(threat, goal.center, policy.goal_side_cover_distance_cm)
+
+
+def _is_effective_goal_side_cover(
+    state: GameState,
+    attacking_team_id: str,
+    threat: Vector2,
+    position: Vector2,
+    policy: PhaseGenerationPolicy,
+) -> bool:
+    """Return whether a position protects a deep, central route to goal.
+
+    Merely being a few centimeters beyond the carrier is not meaningful cover,
+    and a defender isolated near the opposite touchline cannot protect the
+    shooting corridor. Both depth and lateral proximity are therefore required.
+    """
+    threat_progress = _target_progress(state, attacking_team_id, threat)
+    defender_progress = _target_progress(state, attacking_team_id, position)
+    return (
+        defender_progress
+        >= threat_progress + policy.minimum_cover_depth_cm
+        and abs(position.y - threat.y) <= policy.central_cover_half_width_cm
+    )
+
+
+def _decoy_tracking_preserves_cover(
+    state: GameState,
+    attacking_team_id: str,
+    outfield_defenders: tuple[PlayerState, ...],
+    presser_id: str | None,
+    tracker_id: str,
+    threat: Vector2,
+    decoy_target: Vector2,
+    policy: PhaseGenerationPolicy,
+) -> bool:
+    """Allow a marker to follow a decoy only when central cover survives.
+
+    The attacking planner must not be able to choose a defensive mistake as an
+    offensive branch. If the tracker would leave the protected corridor, some
+    other non-pressing outfield defender must already provide effective cover;
+    otherwise the correct response is to hand off the decoy and protect goal.
+    """
+    if _is_effective_goal_side_cover(
+        state,
+        attacking_team_id,
+        threat,
+        decoy_target,
+        policy,
+    ):
+        return True
+    return any(
+        defender.id not in {presser_id, tracker_id}
+        and _is_effective_goal_side_cover(
+            state,
+            attacking_team_id,
+            threat,
+            defender.position,
+            policy,
+        )
+        for defender in outfield_defenders
     )
 
 
@@ -398,35 +577,126 @@ def _dribble_support_intentions(
     destination: Vector2,
     policy: PhaseGenerationPolicy,
 ) -> tuple[AttackingIntention, ...]:
+    """Build one coordinated off-ball unit for a dribble.
+
+    The returned intentions belong in the same phase. Earlier versions returned
+    the same flat collection but treated each item as an alternative phase,
+    leaving only one purposeful runner while everyone else shifted generically.
+    """
     support_target = _support_target(
         state,
         teammates[0].team_id,
         destination,
         policy.support_offset_cm,
     )
-    forward_targets = [
-        _bounded_target(
-            state,
-            Vector2(destination.x, destination.y - policy.wide_run_offset_cm),
-        ),
-        _bounded_target(
-            state,
-            Vector2(destination.x, destination.y + policy.wide_run_offset_cm),
-        ),
-    ]
+    team_id = teammates[0].team_id
+    attacking_goal = state.goals_by_id[state.teams_by_id[team_id].attacking_goal_id]
+    attacking_progress_ratio = _attacking_progress_ratio(
+        state,
+        team_id,
+        destination,
+    )
+    is_final_third = (
+        attacking_progress_ratio >= policy.crossing_trigger_progress_ratio
+    )
+    is_wide = (
+        destination.y <= state.field.width * policy.crossing_wide_channel_ratio
+        or destination.y
+        >= state.field.width * (1 - policy.crossing_wide_channel_ratio)
+    )
+    crossing_attack = is_final_third and is_wide
+
+    if crossing_attack:
+        direction = state.teams_by_id[team_id].attacking_direction
+        box_x = (
+            attacking_goal.center.x - policy.crossing_box_depth_cm
+            if direction == AttackingDirection.POSITIVE_X
+            else attacking_goal.center.x + policy.crossing_box_depth_cm
+        )
+        low_post_y = (
+            attacking_goal.bottom_left.y + policy.crossing_post_inset_cm
+        )
+        high_post_y = (
+            attacking_goal.top_right.y - policy.crossing_post_inset_cm
+        )
+        # Preserve natural lanes: a low-side carrier offers near post first and
+        # far post second; a high-side carrier reverses that ordering.
+        post_targets = (
+            (Vector2(box_x, low_post_y), Vector2(box_x, high_post_y))
+            if destination.y <= attacking_goal.center.y
+            else (Vector2(box_x, high_post_y), Vector2(box_x, low_post_y))
+        )
+        forward_targets = [_bounded_target(state, target) for target in post_targets]
+    else:
+        forward_targets = [
+            _bounded_target(
+                state,
+                Vector2(destination.x, destination.y - policy.wide_run_offset_cm),
+            ),
+            _bounded_target(
+                state,
+                Vector2(destination.x, destination.y + policy.wide_run_offset_cm),
+            ),
+        ]
     dynamic_spaces = tuple(
         zone
         for zone in state.target_zones_by_id.values()
         if zone.source == TargetZoneSource.DYNAMIC
         and zone.attacking_team_id == teammates[0].team_id
     )
-    forward_targets.extend(
-        zone.center for zone in dynamic_spaces[: policy.maximum_dynamic_support_spaces]
-    )
+    if not crossing_attack:
+        forward_targets.extend(
+            zone.center
+            for zone in dynamic_spaces[: policy.maximum_dynamic_support_spaces]
+        )
     forward_targets = list(dict.fromkeys(forward_targets))
 
     intentions: list[AttackingIntention] = []
     assigned = set(excluded)
+    if crossing_attack:
+        # Box arrivals are time-critical, so choose both runners before assigning
+        # the safer behind-ball support role. This lets two teammates attack a
+        # potential cross concurrently instead of sacrificing one as support.
+        for runner, target in _assign_forward_runs(
+            state,
+            teammates,
+            tuple(forward_targets),
+            assigned,
+        ):
+            assigned.add(runner.id)
+            intentions.append(
+                AttackingIntention(
+                    player_id=runner.id,
+                    intention_type=AttackingIntentionType.FORWARD_RUN,
+                    target=target,
+                    start_offset_seconds=policy.support_reaction_seconds,
+                )
+            )
+    elif attacking_progress_ratio >= policy.width_provider_progress_ratio:
+        # A central carrier does not trigger the crossing template, but the
+        # attack should still stretch the block. Reserve the naturally widest
+        # teammate before support and box lanes are allocated so arrival-time
+        # matching cannot pull that player back toward the ball.
+        available = tuple(player for player in teammates if player.id not in assigned)
+        width_provider = max(
+            available,
+            key=lambda player: (
+                abs(player.position.y - state.field.width / 2),
+                player.speed_category.multiplier,
+                player.id,
+            ),
+            default=None,
+        )
+        if width_provider is not None:
+            assigned.add(width_provider.id)
+            intentions.append(
+                AttackingIntention(
+                    player_id=width_provider.id,
+                    intention_type=AttackingIntentionType.FORWARD_RUN,
+                    target=_width_provider_target(state, width_provider, policy),
+                    start_offset_seconds=policy.support_reaction_seconds,
+                )
+            )
     support = _off_ball_player_for_role(
         state,
         teammates,
@@ -445,20 +715,87 @@ def _dribble_support_intentions(
                 start_offset_seconds=policy.support_reaction_seconds,
             )
         )
-    for runner, target in _assign_forward_runs(
-        state,
-        teammates,
-        tuple(forward_targets),
-        assigned,
-    ):
-        intentions.append(
-            AttackingIntention(
-                player_id=runner.id,
-                intention_type=AttackingIntentionType.FORWARD_RUN,
-                target=target,
-                start_offset_seconds=policy.support_reaction_seconds,
+    if not crossing_attack:
+        for runner, target in _assign_forward_runs(
+            state,
+            teammates,
+            tuple(forward_targets),
+            assigned,
+        ):
+            intentions.append(
+                AttackingIntention(
+                    player_id=runner.id,
+                    intention_type=AttackingIntentionType.FORWARD_RUN,
+                    # Retain a runner's natural width when the generic lane is
+                    # closer to the carrier than the runner's current lane.
+                    target=_preserve_natural_width(state, runner, target),
+                    start_offset_seconds=policy.support_reaction_seconds,
+                )
             )
+    return tuple(intentions)
+
+
+def _shot_attacking_intentions(
+    state: GameState,
+    teammates: tuple[PlayerState, ...],
+    actor_id: str,
+    policy: PhaseGenerationPolicy,
+) -> tuple[AttackingIntention, ...]:
+    """Assign two rebound runs and preserve one player behind the shot.
+
+    Generic SHIFT_WITH_PLAY pulls every teammate toward the shooter. A shot has
+    different needs: near/far-post rebound occupation plus one rest-defense
+    player who remains available against a clearance or counterattack.
+    """
+    available = tuple(
+        player
+        for player in teammates
+        if player.id != actor_id and not is_goalkeeper(player)
+    )
+    if not available:
+        return ()
+    attacking_team_id = state.players_by_id[actor_id].team_id
+    team = state.teams_by_id[attacking_team_id]
+    goal = state.goals_by_id[team.attacking_goal_id]
+    rebound_x = (
+        goal.center.x - policy.shot_rebound_depth_cm
+        if team.attacking_direction == AttackingDirection.POSITIVE_X
+        else goal.center.x + policy.shot_rebound_depth_cm
+    )
+    rebound_targets = (
+        Vector2(rebound_x, goal.bottom_left.y + policy.shot_rebound_post_inset_cm),
+        Vector2(rebound_x, goal.top_right.y - policy.shot_rebound_post_inset_cm),
+    )
+
+    # Keep the deepest teammate as rest defense. The remaining players are
+    # matched jointly to the two rebound lanes to avoid unnecessary crossing.
+    rest_defender = min(
+        available,
+        key=lambda player: (_progress(state, player), player.id),
+    )
+    assigned = {actor_id, rest_defender.id}
+    intentions = [
+        AttackingIntention(
+            player_id=rest_defender.id,
+            intention_type=AttackingIntentionType.HOLD_POSITION,
+            target=rest_defender.position,
+            start_offset_seconds=0,
         )
+    ]
+    intentions.extend(
+        AttackingIntention(
+            player_id=runner.id,
+            intention_type=AttackingIntentionType.FORWARD_RUN,
+            target=target,
+            start_offset_seconds=policy.shot_rebound_reaction_seconds,
+        )
+        for runner, target in _assign_forward_runs(
+            state,
+            available,
+            rebound_targets,
+            assigned,
+        )
+    )
     return tuple(intentions)
 
 
@@ -516,22 +853,69 @@ def generate_tactical_phases(
             policy,
         )
         presser = _nearest(outfield_defenders, action.start)
-        tracker = _nearest(
-            outfield_defenders,
-            action.destination,
-            {presser.id} if presser else set(),
-        )
+        # A shot blocker aims at an early point on the trajectory, not the goal
+        # endpoint. The presser owns the shooter; the second
+        # defender owns an early segment of the shot line, producing a distinct
+        # blocking angle instead of duplicating pressure at the ball.
+        if action.action_type == ActionType.SHOT:
+            tracker_target = Vector2(
+                action.start.x
+                + (action.destination.x - action.start.x)
+                * policy.shot_secondary_block_fraction,
+                action.start.y
+                + (action.destination.y - action.start.y)
+                * policy.shot_secondary_block_fraction,
+            )
+            tracker = _nearest(
+                tuple(
+                    defender
+                    for defender in outfield_defenders
+                    if presser is None or defender.id != presser.id
+                ),
+                tracker_target,
+            )
+        elif action.action_type == ActionType.MOVE_WITH_BALL and outfield_defenders:
+            tracker_target = _goal_side_cover_target(
+                state,
+                outfield_defenders[0].team_id,
+                action.destination,
+                policy,
+            )
+            tracker = _nearest(
+                outfield_defenders,
+                tracker_target,
+                {presser.id} if presser else set(),
+            )
+        else:
+            tracker_target = action.destination
+            tracker = _nearest(
+                outfield_defenders,
+                tracker_target,
+                {presser.id} if presser else set(),
+            )
         attacking: list[AttackingIntention] = []
         defensive: list[DefensiveIntention] = []
 
         if action.action_type == ActionType.PASS_TO_SPACE and action.receiver_id:
+            receiver_run_time = action.metrics.receiver_arrival_time_seconds or 0
+            ball_travel_time = (
+                action.metrics.ball_travel_duration_seconds
+                or action.metrics.duration_seconds
+            )
             attacking.append(
                 AttackingIntention(
                     player_id=action.receiver_id,
                     intention_type=AttackingIntentionType.RECEIVE_IN_SPACE,
                     target=action.destination,
-                    start_offset_seconds=0,
-                    required_arrival_seconds=action.metrics.duration_seconds,
+                    # Delay a shorter run so receiver and ball reach the target
+                    # together. If the run would take longer than ball travel,
+                    # pass analysis rejects the candidate rather than adding a
+                    # visible stationary hold after the passer receives.
+                    start_offset_seconds=max(
+                        0,
+                        ball_travel_time - receiver_run_time,
+                    ),
+                    required_arrival_seconds=ball_travel_time,
                 )
             )
             template = PhaseTemplateType.PASS_INTO_SPACE
@@ -542,27 +926,39 @@ def generate_tactical_phases(
         else:
             template = PhaseTemplateType.SHOT
 
-        support_variants: tuple[AttackingIntention | None, ...] = (None,)
+        attacking_role_variants: tuple[tuple[AttackingIntention, ...], ...] = ((),)
         if template == PhaseTemplateType.DRIBBLE_WITH_SUPPORT:
-            support_variants = _dribble_support_intentions(
+            coordinated_roles = _dribble_support_intentions(
                 state,
                 outfield_teammates,
                 excluded_attackers,
                 action.destination,
                 policy,
-            ) or (None,)
+            )
+            attacking_role_variants = (coordinated_roles,)
         elif support is not None and template != PhaseTemplateType.SHOT:
-            support_variants = (
-                AttackingIntention(
-                    player_id=support.id,
-                    intention_type=AttackingIntentionType.SUPPORT_BALL,
-                    target=_support_target(
-                        state,
-                        actor.team_id,
-                        action.destination,
-                        policy.support_offset_cm,
+            attacking_role_variants = (
+                (
+                    AttackingIntention(
+                        player_id=support.id,
+                        intention_type=AttackingIntentionType.SUPPORT_BALL,
+                        target=_support_target(
+                            state,
+                            actor.team_id,
+                            action.destination,
+                            policy.support_offset_cm,
+                        ),
+                        start_offset_seconds=policy.support_reaction_seconds,
                     ),
-                    start_offset_seconds=policy.support_reaction_seconds,
+                ),
+            )
+        elif template == PhaseTemplateType.SHOT:
+            attacking_role_variants = (
+                _shot_attacking_intentions(
+                    state,
+                    outfield_teammates,
+                    actor.id,
+                    policy,
                 ),
             )
         if presser is not None:
@@ -576,15 +972,17 @@ def generate_tactical_phases(
                 )
             )
         if tracker is not None:
+            if template == PhaseTemplateType.SHOT:
+                tracker_intention = DefensiveIntentionType.COVER_GOAL
+            elif template == PhaseTemplateType.DRIBBLE_WITH_SUPPORT:
+                tracker_intention = DefensiveIntentionType.COVER_PASSING_LANE
+            else:
+                tracker_intention = DefensiveIntentionType.TRACK_RECEIVER
             defensive.append(
                 DefensiveIntention(
                     player_id=tracker.id,
-                    intention_type=(
-                        DefensiveIntentionType.COVER_GOAL
-                        if template == PhaseTemplateType.SHOT
-                        else DefensiveIntentionType.TRACK_RECEIVER
-                    ),
-                    target=action.destination,
+                    intention_type=tracker_intention,
+                    target=tracker_target,
                     target_player_id=action.receiver_id,
                     start_offset_seconds=(
                         policy.goalkeeper_reaction_seconds
@@ -626,12 +1024,8 @@ def generate_tactical_phases(
                 or action.metrics.duration_seconds
             )
             phase_duration = max(phase_duration, hold + ball_travel)
-        for support_variant in support_variants:
-            base_attacking = (
-                (*attacking, support_variant)
-                if support_variant is not None
-                else tuple(attacking)
-            )
+        for coordinated_roles in attacking_role_variants:
+            base_attacking = (*attacking, *coordinated_roles)
             tactical_variants: list[
                 tuple[tuple[AttackingIntention, ...], tuple[DefensiveIntention, ...]]
             ] = [(tuple(base_attacking), core_defensive)]
@@ -664,15 +1058,25 @@ def generate_tactical_phases(
                         target_player_id=decoy.id,
                         start_offset_seconds=policy.tracking_reaction_seconds,
                     )
-                    tactical_variants.append(
-                        (
-                            decoy_attack,
-                            _replace_defender_intention(
-                                core_defensive,
-                                tracking_decoy,
-                            ),
+                    if _decoy_tracking_preserves_cover(
+                        state,
+                        actor.team_id,
+                        outfield_defenders,
+                        presser.id if presser else None,
+                        tracker.id,
+                        action.destination,
+                        decoy_intention.target,
+                        policy,
+                    ):
+                        tactical_variants.append(
+                            (
+                                decoy_attack,
+                                _replace_defender_intention(
+                                    core_defensive,
+                                    tracking_decoy,
+                                ),
+                            )
                         )
-                    )
                     lane_target = Vector2(
                         action.start.x + (action.destination.x - action.start.x) * 0.65,
                         action.start.y + (action.destination.y - action.start.y) * 0.65,

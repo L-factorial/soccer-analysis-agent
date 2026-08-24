@@ -9,6 +9,10 @@ import {
 
 import { FieldConfiguration, FieldOrientation } from "../../models";
 import { BallMarker } from "./BallMarker";
+import {
+  DynamicOpenSpace,
+  DynamicOpenSpaceOverlay,
+} from "./DynamicOpenSpaceOverlay";
 import { FieldSurface } from "./FieldSurface";
 import { GoalMarker } from "./GoalMarker";
 import { OpenSpaceMarker } from "./OpenSpaceMarker";
@@ -19,6 +23,7 @@ import { PlayerOrientationDial } from "./PlayerOrientationDial";
 type FieldCanvasProps = {
   attackingTeamId?: string | null;
   configuration: FieldConfiguration;
+  dynamicOpenSpaces?: DynamicOpenSpace[];
   orientation: FieldOrientation;
   offsideReleaseLineX?: number | null;
   onLayout?: (event: LayoutChangeEvent) => void;
@@ -38,6 +43,7 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
   function FieldCanvas(
     {
       configuration,
+      dynamicOpenSpaces = [],
       attackingTeamId,
       orientation,
       offsideReleaseLineX,
@@ -67,6 +73,12 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
         orientation={orientation}
         ref={ref}
       >
+        {dynamicOpenSpaces.length > 0 && (
+          <DynamicOpenSpaceOverlay
+            openSpaces={dynamicOpenSpaces}
+            orientation={orientation}
+          />
+        )}
         {configuration.players.length === 0 && (
           <View style={styles.emptyMessage}>
             <Text style={styles.fieldLabel}>{configuration.label} FIELD</Text>

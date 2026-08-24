@@ -4,6 +4,7 @@ from app.analysis import (
     InvalidMovementPolicyError,
     MovementIssueCode,
     MovementPolicy,
+    MovementPace,
     MovementType,
     analyze_short_dribble_movements,
     analyze_movement_to_position,
@@ -48,7 +49,7 @@ def build_state(*, ball_x: float = 2000, speed_category: str = "BASELINE"):
 class MovementPolicyTests(unittest.TestCase):
     def test_rejects_nonpositive_limits(self) -> None:
         with self.assertRaises(InvalidMovementPolicyError):
-            MovementPolicy(run_speed_cm_per_second=0)
+            MovementPolicy(slow_run_speed_cm_per_second=0)
         with self.assertRaises(InvalidMovementPolicyError):
             MovementPolicy(maximum_duration_seconds=-1)
         with self.assertRaises(InvalidMovementPolicyError):
@@ -77,10 +78,10 @@ class MovementAnalysisTests(unittest.TestCase):
             destination,
         )
 
-        self.assertAlmostEqual(fast.duration_seconds, baseline.duration_seconds / 1.15)
+        self.assertAlmostEqual(fast.duration_seconds, baseline.duration_seconds / 1.20)
         self.assertAlmostEqual(
             super_fast.duration_seconds,
-            baseline.duration_seconds / 1.20,
+            baseline.duration_seconds / 1.56,
         )
         self.assertLess(super_fast.duration_seconds, fast.duration_seconds)
 
@@ -89,7 +90,7 @@ class MovementAnalysisTests(unittest.TestCase):
 
         dribbles = analyze_short_dribble_movements(state, "team1-1")
 
-        self.assertEqual(len(dribbles), 6)
+        self.assertEqual(len(dribbles), 18)
         self.assertEqual(
             tuple(dribble.dribble_direction.value for dribble in dribbles[:3]),
             (
@@ -97,6 +98,10 @@ class MovementAnalysisTests(unittest.TestCase):
                 "CUT_LEFT",
                 "CUT_RIGHT",
             ),
+        )
+        self.assertEqual(
+            {dribble.pace for dribble in dribbles},
+            {MovementPace.SLOW, MovementPace.REGULAR, MovementPace.SPRINT},
         )
         self.assertEqual(
             {dribble.travel_duration_seconds for dribble in dribbles},
@@ -108,7 +113,7 @@ class MovementAnalysisTests(unittest.TestCase):
         self.assertLess(left.destination.y, left.start.y)
         self.assertGreater(right.destination.y, right.start.y)
 
-    def test_turning_cost_is_added_before_movement(self) -> None:
+    def test_turning_angle_is_reported_without_adding_time(self) -> None:
         state = build_state()
 
         result = analyze_movement_to_position(
@@ -120,9 +125,11 @@ class MovementAnalysisTests(unittest.TestCase):
         )
 
         self.assertEqual(result.turn_angle_degrees, 90)
-        self.assertEqual(result.turn_duration_seconds, 0.5)
+        # Orientation is still calculated, but turn time is temporarily disabled
+        # until facing data becomes a reliable physical simulation input.
+        self.assertEqual(result.turn_duration_seconds, 0)
         self.assertEqual(result.travel_duration_seconds, 2)
-        self.assertEqual(result.duration_seconds, 2.5)
+        self.assertEqual(result.duration_seconds, 2)
 
     def test_move_and_run_compute_duration_from_distance(self) -> None:
         state = build_state()
@@ -141,7 +148,7 @@ class MovementAnalysisTests(unittest.TestCase):
         self.assertEqual(move.turn_duration_seconds, 0)
         self.assertEqual(move.velocity, Vector2(400, 0))
         self.assertEqual(move.orientation_degrees, 0)
-        self.assertAlmostEqual(run.duration_seconds, 1400 / 650)
+        self.assertAlmostEqual(run.duration_seconds, 1400 / 600)
 
     def test_requested_window_is_checked_against_speed_and_duration(self) -> None:
         state = build_state()
@@ -186,7 +193,7 @@ class MovementAnalysisTests(unittest.TestCase):
         )
 
         self.assertTrue(result.feasible)
-        self.assertEqual(result.duration_seconds, 1.2)
+        self.assertAlmostEqual(result.duration_seconds, 600 / 420)
         self.assertEqual(result.arrival_ball_position, destination)
         self.assertFalse(unresolved.feasible)
         self.assertEqual(

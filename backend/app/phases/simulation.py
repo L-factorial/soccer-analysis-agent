@@ -3,7 +3,12 @@ from types import MappingProxyType
 
 from app.analysis import ActionType
 from app.domain import GameState, PlayerState, Vector2
-from app.spatial import distance, move_toward, orientation_degrees
+from app.spatial import (
+    distance,
+    move_toward,
+    orientation_degrees,
+    turn_duration_seconds,
+)
 from app.transitions import TransitionPolicy, apply_action_candidate
 from app.phases.models import (
     DefensiveIntentionType,
@@ -57,9 +62,11 @@ def _turn_duration_seconds(
     turning_speed_degrees_per_second: float,
 ) -> float:
     target_orientation = orientation_degrees(player.position, target)
-    orientation_delta = abs((target_orientation - player.orientation) % 360)
-    turn_angle = min(orientation_delta, 360 - orientation_delta)
-    return turn_angle / turning_speed_degrees_per_second
+    return turn_duration_seconds(
+        player.orientation,
+        target_orientation,
+        turning_speed_degrees_per_second,
+    )
 
 
 def simulate_tactical_phase(
@@ -200,6 +207,76 @@ def simulate_tactical_phase(
                 validation=tackled_validation,
                 changed_player_ids=(),
                 actual_duration_seconds=tackle_time,
+            )
+
+    if phase.primary_action.action_type == ActionType.SHOT:
+        shot_blocks = []
+        for intention in phase.defensive_intentions:
+            if intention.intention_type not in {
+                DefensiveIntentionType.PRESS_BALL_CARRIER,
+                DefensiveIntentionType.COVER_GOAL,
+                DefensiveIntentionType.COVER_PASSING_LANE,
+            }:
+                continue
+            defender = state.players_by_id[intention.player_id]
+            interception = earliest_linear_interception(
+                mover_start=phase.primary_action.start,
+                mover_end=phase.primary_action.destination,
+                # Phase duration contains the shooter's turn/release hold plus
+                # ball travel, so the trajectory clock matches animation time.
+                duration_seconds=phase.duration_seconds,
+                mover_start_offset_seconds=(
+                    phase.ball_action_start_offset_seconds
+                ),
+                defender_start=defender.position,
+                defender_speed_cm_per_second=(
+                    policy.defender_speed_cm_per_second
+                    * defender.speed_category.multiplier
+                ),
+                tackle_radius_cm=policy.tackle_radius_cm,
+                defender_start_offset_seconds=(
+                    intention.start_offset_seconds
+                    + _turn_duration_seconds(
+                        defender,
+                        intention.target,
+                        policy.turning_speed_degrees_per_second,
+                    )
+                ),
+            )
+            if interception is not None:
+                shot_blocks.append(
+                    (interception.time_seconds, defender.id, interception)
+                )
+
+        if shot_blocks:
+            block_time, defender_id, interception = min(
+                shot_blocks,
+                key=lambda item: (item[0], item[1]),
+            )
+            blocked_validation = PhaseValidation(
+                valid=False,
+                issues=(
+                    *validation.issues,
+                    PhaseIssue(
+                        PhaseIssueCode.SHOT_BLOCKED,
+                        (
+                            f"Defender {defender_id} reaches the shot path at "
+                            f"{block_time:.3f}s near "
+                            f"({interception.position.x:.1f}, "
+                            f"{interception.position.y:.1f})"
+                        ),
+                        phase.primary_action.actor_id,
+                    ),
+                ),
+            )
+            return PhaseSimulationResult(
+                phase=phase,
+                previous_state=state,
+                resulting_state=state,
+                status=PhaseStatus.INTERCEPTED,
+                validation=blocked_validation,
+                changed_player_ids=(),
+                actual_duration_seconds=block_time,
             )
 
     transition = apply_action_candidate(

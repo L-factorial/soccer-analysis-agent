@@ -53,6 +53,7 @@ class PhaseIssueCode(StrEnum):
     GOAL_NOT_SCORED = "goal_not_scored"
     BALL_CARRIER_TACKLED_BEFORE_RELEASE = "ball_carrier_tackled_before_release"
     DRIBBLER_TACKLED = "dribbler_tackled"
+    SHOT_BLOCKED = "shot_blocked"
 
 
 @dataclass(frozen=True, slots=True)

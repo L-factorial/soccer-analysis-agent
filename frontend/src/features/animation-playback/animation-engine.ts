@@ -232,7 +232,7 @@ function eventsActiveAtFrame(
       const endFrame = secondsToAnimationFrame(
         event.startTime + (event.duration ?? 0),
       );
-      return event.duration === undefined
+      return event.duration === undefined || event.duration === 0
         ? frame === startFrame
         : startFrame < frame && frame <= endFrame;
     })
@@ -256,7 +256,10 @@ export function applyAnimationEvent(
         configuration,
         event.playerId,
         event.targetOrientation,
-        playerFrameStep,
+        // Zero-duration turns update facing on their start frame without
+        // introducing a stationary animation window. When turn time is enabled
+        // again, positive-duration events continue to interpolate normally.
+        event.duration === 0 ? 1 : playerFrameStep,
       );
 
     case "RUN":

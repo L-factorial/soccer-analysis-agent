@@ -4,22 +4,23 @@ import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.agent import (
-    AgentConfig,
-    TacticalAgent,
-)
-from app.agent.tool_service import ToolAgentNoCompliantPlanError, ToolPlanningAgent
 from app.builders import (
     build_initial_game_state,
     build_phase_planner_diagnostics,
 )
+from app.commentary import generate_commentary
+from app.commentary.models import CommentarySimulationInput
 from app.domain import PossessionStatus
-from app.models.animation_response import AlternativePlan, AnimationResponse
+from app.models.animation_response import (
+    AlternativePlan,
+    AnimationResponse,
+    CommentaryTrack,
+)
 from app.models.field_submission import FieldSubmission
 from app.phases import PhaseSearchPolicy, search_tactical_phases
 from app.planning import analyze_game_state
-from app.orchestration import PlannerDependencies, run_tactical_planner
 from app.scheduling import PhaseAnimationScheduler
+from app.tactical_instruction import interpret_tactical_instruction
 from app.validation import FieldSubmissionValidationError, validate_field_submission
 
 router = APIRouter(prefix="/field-configurations", tags=["field configurations"])
@@ -29,69 +30,68 @@ logger = logging.getLogger("uvicorn.error")
 def _base_search_policy() -> PhaseSearchPolicy:
     return PhaseSearchPolicy(
         maximum_depth=8,
-        beam_width=5,
+        # Retain more competing tactical routes so a distinct second goal plan
+        # has a realistic chance to survive until the response-selection step.
+        beam_width=8,
         maximum_play_duration_seconds=30,
-        maximum_retained_nodes=75,
+        maximum_retained_nodes=100,
+        maximum_solution_count=2,
     )
 
 
-def _run_planner(analyzed, instruction: str | None):
-    """Compatibility entry point for request-level planner orchestration."""
-    config = AgentConfig.from_environment()
-    try:
-        return run_tactical_planner(
-            analyzed,
-            instruction,
-            _base_search_policy(),
-            config,
-            PlannerDependencies(
-                deterministic_search=search_tactical_phases,
-                tactical_agent_factory=TacticalAgent,
-                tool_agent_factory=ToolPlanningAgent,
-            ),
-            logger,
-        )
-    except ToolAgentNoCompliantPlanError as error:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "no_instruction_compliant_plan",
-                "message": str(error),
-            },
-        ) from error
-
-
-def _augment_diagnostics(diagnostics, submission, run):
-    metadata = run.metadata
+def _augment_diagnostics(diagnostics, submission, applied_directives):
+    """Attach deterministic instruction interpretation to search telemetry."""
     return diagnostics.model_copy(
         update={
             "tactical_instruction": submission.tactical_instruction,
-            "applied_directives": run.applied_directives,
-            "agent_mode": metadata.mode,
-            "agent_model": metadata.model,
-            "agent_attempts": metadata.attempts,
-            "tactical_intent": (
-                metadata.intent.model_dump(by_alias=True)
-                if metadata.intent is not None else None
-            ),
-            "plan_evaluation": (
-                metadata.evaluation.model_dump(by_alias=True)
-                if metadata.evaluation is not None else None
-            ),
-            "agent_fallback_reason": metadata.fallback_reason,
-            "agent_tool_calls": metadata.tool_calls,
-            "agent_iterations": metadata.agent_iterations,
+            "applied_directives": applied_directives,
         }
     )
 
 
-def _sequence_uses_preferred_space(sequence, preferred_space_ids) -> bool:
-    if not preferred_space_ids:
-        return True
-    return any(
-        step.phase.primary_action.target_zone_id in preferred_space_ids
-        for step in sequence.steps
-    )
+def _sequence_tactical_signature(sequence) -> tuple:
+    """Describe the visible tactical route, not small geometric variations.
+
+    Candidate generation can produce two paths that use different dynamic-space
+    IDs or nearby endpoints while showing the same players performing the same
+    play. Those are not useful UI alternatives. We therefore compare the action
+    chain, participants, and broad lateral channel. Consecutive repetitions of
+    the same choice (most commonly a long dribble split across phases) collapse
+    into one route step.
+    """
+    signature = []
+    for step in sequence.steps:
+        action = step.phase.primary_action
+        field_width = step.simulation.previous_state.field.width
+        # Three channels preserve genuinely different left/central/right routes
+        # without treating a few metres of endpoint noise as a new solution.
+        lateral_channel = min(2, int(3 * action.destination.y / field_width))
+        route_step = (
+            action.action_type.value,
+            action.actor_id,
+            action.receiver_id,
+            lateral_channel,
+        )
+        if not signature or signature[-1] != route_step:
+            signature.append(route_step)
+    return tuple(signature)
+
+
+def _select_distinct_solutions(primary, candidates, maximum_solution_count: int):
+    """Keep score order while excluding duplicate tactical routes."""
+    selected = [primary]
+    signatures = {_sequence_tactical_signature(primary)}
+    for candidate in candidates:
+        if candidate.id == primary.id:
+            continue
+        signature = _sequence_tactical_signature(candidate)
+        if signature in signatures:
+            continue
+        selected.append(candidate)
+        signatures.add(signature)
+        if len(selected) == maximum_solution_count:
+            break
+    return tuple(selected)
 
 
 class FieldSubmissionReceipt(BaseModel):
@@ -102,6 +102,14 @@ class FieldSubmissionReceipt(BaseModel):
     goal_count: int = Field(serialization_alias="goalCount")
     open_space_count: int = Field(serialization_alias="openSpaceCount")
     field_submission: FieldSubmission = Field(serialization_alias="fieldSubmission")
+
+
+class CommentaryRequest(BaseModel):
+    """A completed simulation submitted independently for narration."""
+    field_submission: FieldSubmission = Field(alias="fieldSubmission")
+    # This is the camelCase representation previously returned to the frontend,
+    # not an internal AnimationResponse reconstructed from snake_case fields.
+    animation_response: CommentarySimulationInput = Field(alias="animationResponse")
 
 
 def _validate_submission(submission: FieldSubmission) -> None:
@@ -141,16 +149,17 @@ def analyze_field_configuration(submission: FieldSubmission) -> AnimationRespons
             },
         )
 
-    # Orchestration may consult an LLM, but every returned sequence has been
-    # generated and simulated by the same deterministic tactical engine.
-    run = _run_planner(analyzed, submission.tactical_instruction)
-    result = run.result
-    attacking_team_id = analyzed.game_state.possession.team_id
-    preferred_space_ids = (
-        run.metadata.intent.preferred_space_ids
-        if run.metadata.intent is not None
-        else ()
+    base_search_policy = _base_search_policy()
+    instruction_policy = interpret_tactical_instruction(
+        submission.tactical_instruction,
+        base_search_policy,
     )
+    result = search_tactical_phases(
+        analyzed,
+        instruction_policy.search,
+        scoring_policy=instruction_policy.scoring,
+    )
+    attacking_team_id = analyzed.game_state.possession.team_id
     # The public analyze contract is goal-oriented. A high-scoring non-goal
     # frontier node remains useful diagnostics but cannot become the animation.
     scoring_sequences = tuple(
@@ -158,32 +167,30 @@ def analyze_field_configuration(submission: FieldSubmission) -> AnimationRespons
         for sequence in result.best_sequences
         if sequence.analyzed_state.game_state.scoring_team_id
         == attacking_team_id
-        and _sequence_uses_preferred_space(
-            sequence,
-            preferred_space_ids,
-        )
     )
     if not scoring_sequences:
         diagnostics = _augment_diagnostics(
             build_phase_planner_diagnostics(result),
             submission,
-            run,
+            instruction_policy.applied_directives,
         )
         raise HTTPException(
             status_code=422,
             detail={
                 "code": "no_goal_scoring_sequence",
                 "message": (
-                    "No goal-scoring sequence satisfying the requested tactical "
-                    "spaces was found within the current search limits"
-                    if preferred_space_ids
-                    else "No goal-scoring sequence was found within the current "
+                    "No goal-scoring sequence was found within the current "
                     "search depth and shooting range"
                 ),
                 "diagnostics": diagnostics.model_dump(by_alias=True),
             },
         )
     selected = scoring_sequences[0]
+    selected_solutions = _select_distinct_solutions(
+        selected,
+        scoring_sequences[1:],
+        base_search_policy.maximum_solution_count,
+    )
     # Scheduling is deliberately last: it projects the selected immutable plan
     # onto timestamps and never changes search or simulation decisions.
     scheduler = PhaseAnimationScheduler()
@@ -195,13 +202,13 @@ def analyze_field_configuration(submission: FieldSubmission) -> AnimationRespons
         diagnostics = _augment_diagnostics(
             animation_response.diagnostics,
             submission,
-            run,
+            instruction_policy.applied_directives,
         )
         animation_response = animation_response.model_copy(
             update={"diagnostics": diagnostics}
         )
     alternatives = []
-    for index, sequence in enumerate(run.alternative_sequences[:2]):
+    for index, sequence in enumerate(selected_solutions[1:], start=1):
         alternative = scheduler.schedule(
             sequence,
             build_phase_planner_diagnostics(result, sequence),
@@ -209,15 +216,12 @@ def analyze_field_configuration(submission: FieldSubmission) -> AnimationRespons
         alternatives.append(
             AlternativePlan(
                 id=sequence.id,
-                label=f"Alternative {index + 1}",
-                reason=(
-                    run.alternative_reasons[index]
-                    if index < len(run.alternative_reasons)
-                    else "A tactically different goal-scoring option."
-                ),
+                label=f"Alternative {index}",
+                reason="A distinct goal-scoring route retained by beam search.",
                 duration=alternative.duration,
                 events=alternative.events,
                 diagnostics=alternative.diagnostics,
+                phase_snapshots=alternative.phase_snapshots,
             )
         )
     animation_response = animation_response.model_copy(
@@ -228,6 +232,28 @@ def analyze_field_configuration(submission: FieldSubmission) -> AnimationRespons
         json.dumps(animation_response.model_dump(by_alias=True)),
     )
     return animation_response
+
+
+@router.post(
+    "/commentary",
+    response_model=CommentaryTrack,
+    response_model_by_alias=True,
+)
+def create_commentary(request: CommentaryRequest) -> CommentaryTrack:
+    """Generate narration independently of the simulation request lifecycle."""
+    commentary = generate_commentary(
+        request.animation_response,
+        request.field_submission,
+    )
+    if commentary is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "commentary_unavailable",
+                "message": "Commentary is disabled, unconfigured, or could not be generated",
+            },
+        )
+    return commentary
 
 
 @router.post("", response_model=FieldSubmissionReceipt)

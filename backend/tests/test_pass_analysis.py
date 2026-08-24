@@ -2,6 +2,7 @@ import unittest
 
 from app.analysis import (
     InvalidPassPolicyError,
+    PassDistanceCategory,
     PassIssueCode,
     PassPolicy,
     PassType,
@@ -64,22 +65,89 @@ def build_state(*, defender: tuple[float, float] | None = None):
     return resolved
 
 
+def build_long_pass_state(distance_cm: float):
+    """Create an uncontested horizontal pass with an exact measurable length."""
+    payload = valid_payload()
+    field = payload["fieldConfiguration"]
+    field["players"] = [
+        player("team1-1", "team1", 1, 2000, 4500),
+        player("team1-2", "team1", 2, 2000 + distance_cm, 4500),
+    ]
+    field["ball"]["position"] = {"x": 2000, "y": 4500}
+    field["openSpaces"] = []
+    submission = FieldSubmission.model_validate(payload)
+    validate_field_submission(submission)
+    state = build_initial_game_state(submission)
+    resolved, _ = resolve_initial_possession(state)
+    return resolved
+
+
 class PassPolicyTests(unittest.TestCase):
     def test_rejects_invalid_policy(self) -> None:
         with self.assertRaises(InvalidPassPolicyError):
-            PassPolicy(ball_speed_cm_per_second=0)
+            PassPolicy(short_pass_speed_cm_per_second=0)
         with self.assertRaises(InvalidPassPolicyError):
             PassPolicy(
-                ball_speed_cm_per_second=2000,
+                long_pass_speed_cm_per_second=2000,
                 maximum_ball_speed_cm_per_second=1000,
+            )
+        with self.assertRaises(InvalidPassPolicyError):
+            PassPolicy(
+                short_pass_max_distance_cm=2000,
+                moderate_pass_max_distance_cm=1000,
             )
         with self.assertRaises(InvalidPassPolicyError):
             PassPolicy(lane_clearance_cm=-1)
         with self.assertRaises(InvalidPassPolicyError):
             PassPolicy(maximum_ball_carrier_hold_seconds=-1)
+        with self.assertRaises(InvalidPassPolicyError):
+            PassPolicy(maximum_pass_distance_cm=0)
 
 
 class PassAnalysisTests(unittest.TestCase):
+    def test_distance_categories_choose_configured_nominal_speed(self) -> None:
+        cases = (
+            (1000, PassDistanceCategory.SHORT, 1200),
+            (1001, PassDistanceCategory.MODERATE, 1800),
+            (3000, PassDistanceCategory.MODERATE, 1800),
+            (3001, PassDistanceCategory.LONG, 2400),
+            (6000, PassDistanceCategory.LONG, 2400),
+        )
+        for distance_cm, category, speed in cases:
+            with self.subTest(distance_cm=distance_cm):
+                result = analyze_pass_to_player(
+                    build_long_pass_state(distance_cm),
+                    "team1-1",
+                    "team1-2",
+                )
+                self.assertEqual(result.distance_category, category)
+                self.assertEqual(result.ball_speed_cm_per_second, speed)
+
+    def test_pass_at_sixty_metre_boundary_is_allowed(self) -> None:
+        result = analyze_pass_to_player(
+            build_long_pass_state(6000),
+            "team1-1",
+            "team1-2",
+        )
+
+        self.assertNotIn(
+            PassIssueCode.PASS_OUT_OF_RANGE,
+            {issue.code for issue in result.issues},
+        )
+
+    def test_pass_beyond_sixty_metres_is_rejected(self) -> None:
+        result = analyze_pass_to_player(
+            build_long_pass_state(6001),
+            "team1-1",
+            "team1-2",
+        )
+
+        self.assertFalse(result.feasible)
+        self.assertIn(
+            PassIssueCode.PASS_OUT_OF_RANGE,
+            {issue.code for issue in result.issues},
+        )
+
     def test_safe_direct_pass_computes_ball_motion(self) -> None:
         result = analyze_pass_to_player(
             build_state(), "team1-1", "team1-2"
@@ -112,12 +180,12 @@ class PassAnalysisTests(unittest.TestCase):
             Vector2(3000, 4500),
         )
 
-    def test_space_pass_checks_receiver_arrival(self) -> None:
+    def test_space_pass_weights_ball_to_receiver_arrival(self) -> None:
         state = build_state()
         reachable = analyze_pass_to_space(
             state, "team1-1", "team1-2", "OpenSpace1"
         )
-        late = analyze_pass_to_space(
+        weighted = analyze_pass_to_space(
             state,
             "team1-1",
             "team1-2",
@@ -128,11 +196,12 @@ class PassAnalysisTests(unittest.TestCase):
         self.assertTrue(reachable.feasible)
         self.assertEqual(reachable.destination, Vector2(4500, 4500))
         self.assertEqual(reachable.target_zone_id, "OpenSpace1")
-        self.assertFalse(late.feasible)
-        self.assertIn(
-            PassIssueCode.RECEIVER_ARRIVES_TOO_LATE,
-            {issue.code for issue in late.issues},
+        self.assertTrue(weighted.feasible)
+        self.assertAlmostEqual(
+            weighted.duration_seconds,
+            weighted.receiver_arrival_time_seconds,
         )
+        self.assertEqual(weighted.ball_carrier_hold_time_seconds, 0)
 
     def test_requested_duration_enforces_ball_speed_limit(self) -> None:
         result = analyze_pass_to_player(
@@ -151,6 +220,7 @@ class PassAnalysisTests(unittest.TestCase):
             "team1-1",
             "team1-2",
             "OpenSpace2",
+            requested_duration_seconds=1,
             policy=PassPolicy(maximum_ball_carrier_hold_seconds=0.5),
         )
 

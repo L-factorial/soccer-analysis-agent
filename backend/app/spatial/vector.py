@@ -5,6 +5,12 @@ from app.domain import Vector2
 # Absolute tolerance for zero-length vectors and floating-point geometry checks.
 EPSILON = 1e-9
 
+# Player orientation is currently useful for presentation, but the editor does
+# not yet provide reliable enough facing data to charge physical time for a
+# turn. Keep this switch centralized so a future orientation model can restore
+# turn duration consistently across analysis, simulation, offside, and output.
+ACCOUNT_FOR_TURN_DURATION = False
+
 
 def add(left: Vector2, right: Vector2) -> Vector2:
     return Vector2(left.x + right.x, left.y + right.y)
@@ -44,6 +50,18 @@ def orientation_degrees(start: Vector2, end: Vector2) -> float:
     if magnitude(delta) <= EPSILON:
         return 0
     return math.degrees(math.atan2(delta.y, delta.x)) % 360
+
+
+def turn_duration_seconds(
+    current_orientation: float,
+    target_orientation: float,
+    turning_speed_degrees_per_second: float,
+) -> float:
+    """Return physical turn time, currently disabled by temporary policy."""
+    if not ACCOUNT_FOR_TURN_DURATION:
+        return 0
+    difference = abs((target_orientation - current_orientation) % 360)
+    return min(difference, 360 - difference) / turning_speed_degrees_per_second
 
 
 def interpolate(start: Vector2, end: Vector2, fraction: float) -> Vector2:

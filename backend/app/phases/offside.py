@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from app.analysis import ActionType
 from app.domain import AttackingDirection, GameState, PlayerState, Vector2
 from app.phases.models import TacticalPhase
-from app.spatial import move_toward, orientation_degrees
+from app.spatial import move_toward, orientation_degrees, turn_duration_seconds
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,8 +43,11 @@ def _turn_duration(
     degrees_per_second: float,
 ) -> float:
     target_orientation = orientation_degrees(player.position, target)
-    difference = abs((target_orientation - player.orientation) % 360)
-    return min(difference, 360 - difference) / degrees_per_second
+    return turn_duration_seconds(
+        player.orientation,
+        target_orientation,
+        degrees_per_second,
+    )
 
 
 def _receiver_position_at_release(

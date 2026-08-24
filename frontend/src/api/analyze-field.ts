@@ -1,5 +1,6 @@
 import {
   AnimationResponse,
+  CommentaryTrack,
   PlannerDiagnostics,
   createFieldSubmission,
   FieldConfiguration,
@@ -27,6 +28,31 @@ export class FieldAnalysisError extends Error {
     super(message);
     this.name = "FieldAnalysisError";
   }
+}
+
+export async function generateCommentary(
+  configuration: FieldConfiguration,
+  animationResponse: AnimationResponse,
+  tacticalInstruction?: string,
+  signal?: AbortSignal,
+): Promise<CommentaryTrack> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/field-configurations/commentary`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fieldSubmission: createFieldSubmission(configuration, tacticalInstruction),
+        // Never send an earlier commentary track back to the model.
+        animationResponse: { ...animationResponse, commentary: undefined },
+      }),
+      signal,
+    },
+  );
+  if (!response.ok) {
+    throw new Error("Commentary is currently unavailable.");
+  }
+  return (await response.json()) as CommentaryTrack;
 }
 
 function errorMessage(body: BackendErrorBody, status: number): string {

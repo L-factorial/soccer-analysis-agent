@@ -99,21 +99,28 @@ def build_animation_response(
                 raise ValueError("Space pass is missing its receiver or target space")
             receiver_duration = candidate.metrics.receiver_arrival_time_seconds or 0
             # A future receiver may start a supporting run during earlier
-            # actions. Schedule the earliest conflict-free receiver arrival
-            # while ensuring the current ball carrier waits at most 1.5s.
-            latest_preferred_arrival = (
-                start_time + MAXIMUM_VISIBLE_HOLD_SECONDS + raw_duration
-            )
+            # actions. Use their earliest conflict-free start; the old formula
+            # targeted the latest permitted arrival and therefore inserted the
+            # full 1.5-second hold even when no wait was necessary.
             receiver_start_time = max(
                 player_available_time(candidate.receiver_id),
-                latest_preferred_arrival - receiver_duration,
+                start_time,
                 0,
             )
             step_end_time = max(
                 start_time + raw_duration,
                 receiver_start_time + receiver_duration,
             )
-            pass_start_time = max(start_time, step_end_time - raw_duration)
+            natural_pass_start = max(start_time, step_end_time - raw_duration)
+            # Legacy action sequences can leave the receiver occupied by an
+            # earlier animation after the next search step has begun. Cap the
+            # visible preparation pause and stretch only the presentation-time
+            # ball event so it still reaches the receiver at step_end_time.
+            pass_start_time = min(
+                natural_pass_start,
+                start_time + MAXIMUM_VISIBLE_HOLD_SECONDS,
+            )
+            scheduled_pass_duration = step_end_time - pass_start_time
             coordinated_duration = step_end_time - start_time
             # Defensive pressure continues while the passer prepares and while
             # the ball travels, rather than beginning only at release time.
@@ -139,7 +146,7 @@ def build_animation_response(
                     intended_receiver_id=candidate.receiver_id,
                     space_id=candidate.target_zone_id,
                     start_time=_time(pass_start_time),
-                    duration=duration,
+                    duration=_time(scheduled_pass_duration),
                     target=target,
                 )
             )
@@ -197,10 +204,17 @@ def build_animation_response(
         start_time = step_end_time
 
     duration = _time(start_time)
-    if events and max(
-        event.start_time + getattr(event, "duration", 0) for event in events
-    ) > duration + 1e-6:
-        raise ValueError("Animation events exceed the sequence duration")
+    if events:
+        event_end = max(
+            event.start_time + getattr(event, "duration", 0) for event in events
+        )
+        # Event components and response duration are serialized independently
+        # to six decimals, so their reconstructed sums may differ by one unit
+        # in the final decimal place.
+        if event_end > duration + 2e-6:
+            raise ValueError(
+                f"Animation events end at {event_end}, after sequence {duration}"
+            )
     return AnimationResponse(
         duration=duration,
         events=tuple(events),

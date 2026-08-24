@@ -10,6 +10,7 @@ from app.spatial import (
     is_inside_field,
     nearest_point_in_zone,
     orientation_degrees,
+    turn_duration_seconds,
     required_speed,
     required_velocity,
     travel_time,
@@ -26,20 +27,22 @@ class InvalidMovementPolicyError(ValueError):
 class MovementPolicy:
     """Physical movement limits in centimeters, seconds, and degrees."""
     move_speed_cm_per_second: float = 400
-    run_speed_cm_per_second: float = 650
-    move_with_ball_speed_cm_per_second: float = 500
+    slow_run_speed_cm_per_second: float = 400
+    regular_pace_multiplier: float = 1.5
+    sprint_pace_multiplier: float = 1.5
+    dribble_to_run_speed_ratio: float = 0.70
     maximum_duration_seconds: float = 30
     turning_speed_degrees_per_second: float = 180
 
     def __post_init__(self) -> None:
         if self.move_speed_cm_per_second <= 0:
             raise InvalidMovementPolicyError("Move speed must be positive")
-        if self.run_speed_cm_per_second <= 0:
-            raise InvalidMovementPolicyError("Run speed must be positive")
-        if self.move_with_ball_speed_cm_per_second <= 0:
-            raise InvalidMovementPolicyError(
-                "Move-with-ball speed must be positive"
-            )
+        if self.slow_run_speed_cm_per_second <= 0:
+            raise InvalidMovementPolicyError("Slow run speed must be positive")
+        if self.regular_pace_multiplier <= 0 or self.sprint_pace_multiplier <= 0:
+            raise InvalidMovementPolicyError("Pace multipliers must be positive")
+        if not 0 < self.dribble_to_run_speed_ratio <= 1:
+            raise InvalidMovementPolicyError("Dribble speed ratio must be in (0, 1]")
         if self.maximum_duration_seconds <= 0:
             raise InvalidMovementPolicyError("Maximum duration must be positive")
         if self.turning_speed_degrees_per_second <= 0:
@@ -51,6 +54,13 @@ class MovementType(StrEnum):
     MOVE = "MOVE"
     RUN = "RUN"
     MOVE_WITH_BALL = "MOVE_WITH_BALL"
+
+
+class MovementPace(StrEnum):
+    """Effort selected per action, independent of intrinsic player capability."""
+    SLOW = "SLOW"
+    REGULAR = "REGULAR"
+    SPRINT = "SPRINT"
 
 
 class DribbleDirection(StrEnum):
@@ -82,6 +92,7 @@ class MovementIssue:
 class MovementAnalysis:
     player_id: str
     movement_type: MovementType
+    pace: MovementPace
     start: Vector2
     destination: Vector2
     target_zone_id: str | None
@@ -104,13 +115,22 @@ class MovementAnalysis:
 
 def _allowed_speed(
     movement_type: MovementType,
+    pace: MovementPace,
     policy: MovementPolicy,
 ) -> float:
     if movement_type == MovementType.MOVE:
         return policy.move_speed_cm_per_second
-    if movement_type == MovementType.RUN:
-        return policy.run_speed_cm_per_second
-    return policy.move_with_ball_speed_cm_per_second
+    regular = policy.slow_run_speed_cm_per_second * policy.regular_pace_multiplier
+    run_speed = {
+        MovementPace.SLOW: policy.slow_run_speed_cm_per_second,
+        MovementPace.REGULAR: regular,
+        MovementPace.SPRINT: regular * policy.sprint_pace_multiplier,
+    }[pace]
+    return (
+        run_speed
+        if movement_type == MovementType.RUN
+        else run_speed * policy.dribble_to_run_speed_ratio
+    )
 
 
 def _possession_issues(
@@ -161,6 +181,7 @@ def analyze_movement_to_position(
     policy: MovementPolicy = MovementPolicy(),
     target_zone_id: str | None = None,
     dribble_direction: DribbleDirection | None = None,
+    pace: MovementPace = MovementPace.REGULAR,
 ) -> MovementAnalysis:
     """Evaluate one possible movement without mutating or selecting a path.
 
@@ -174,14 +195,20 @@ def analyze_movement_to_position(
 
     issues = _possession_issues(state, player_id, movement_type)
     allowed_speed = (
-        _allowed_speed(movement_type, policy) * player.speed_category.multiplier
+        _allowed_speed(movement_type, pace, policy) * player.speed_category.multiplier
     )
     delta_distance = distance(player.position, destination)
     target_orientation = orientation_degrees(player.position, destination)
     orientation_delta = abs((target_orientation - player.orientation) % 360)
+    # Keep reporting the geometric angle even while its physical time cost is
+    # disabled; this preserves diagnostics for re-enabling turn time later.
     turn_angle = min(orientation_delta, 360 - orientation_delta)
     turn_duration = (
-        turn_angle / policy.turning_speed_degrees_per_second
+        turn_duration_seconds(
+            player.orientation,
+            target_orientation,
+            policy.turning_speed_degrees_per_second,
+        )
         if delta_distance > EPSILON
         else 0
     )
@@ -248,6 +275,7 @@ def analyze_movement_to_position(
     return MovementAnalysis(
         player_id=player.id,
         movement_type=movement_type,
+        pace=pace,
         start=player.position,
         destination=destination,
         target_zone_id=target_zone_id,
@@ -367,31 +395,37 @@ def analyze_short_dribble_movements(
     )
     analyses: list[MovementAnalysis] = []
     for duration in durations_seconds:
-        travel_distance = policy.move_with_ball_speed_cm_per_second * duration
-        for variant, lateral_fraction in directions:
-            lateral_distance = travel_distance * lateral_fraction
-            forward_distance = (
-                travel_distance
-                if variant == DribbleDirection.STRAIGHT
-                else (travel_distance**2 - lateral_distance**2) ** 0.5
+        for pace in MovementPace:
+            travel_distance = (
+                _allowed_speed(MovementType.MOVE_WITH_BALL, pace, policy)
+                * player.speed_category.multiplier
+                * duration
             )
-            destination = Vector2(
-                (
-                    min(player.position.x + forward_distance, goal_mouth_x)
-                    if forward_sign > 0
-                    else max(player.position.x - forward_distance, goal_mouth_x)
-                ),
-                player.position.y + lateral_distance,
-            )
-            analyses.append(
-                analyze_movement_to_position(
-                    state,
-                    player_id,
-                    MovementType.MOVE_WITH_BALL,
-                    destination,
-                    requested_duration_seconds=duration,
-                    policy=policy,
-                    dribble_direction=variant,
+            for variant, lateral_fraction in directions:
+                lateral_distance = travel_distance * lateral_fraction
+                forward_distance = (
+                    travel_distance
+                    if variant == DribbleDirection.STRAIGHT
+                    else (travel_distance**2 - lateral_distance**2) ** 0.5
                 )
-            )
+                destination = Vector2(
+                    (
+                        min(player.position.x + forward_distance, goal_mouth_x)
+                        if forward_sign > 0
+                        else max(player.position.x - forward_distance, goal_mouth_x)
+                    ),
+                    player.position.y + lateral_distance,
+                )
+                analyses.append(
+                    analyze_movement_to_position(
+                        state,
+                        player_id,
+                        MovementType.MOVE_WITH_BALL,
+                        destination,
+                        requested_duration_seconds=duration,
+                        policy=policy,
+                        dribble_direction=variant,
+                        pace=pace,
+                    )
+                )
     return tuple(analyses)

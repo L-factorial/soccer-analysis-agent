@@ -27,25 +27,51 @@ class InvalidPassPolicyError(ValueError):
 @dataclass(frozen=True, slots=True)
 class PassPolicy:
     """Ball speed, timing, pressure, and interception tolerances for passes."""
-    ball_speed_cm_per_second: float = 1800
+    short_pass_max_distance_cm: float = 1000
+    moderate_pass_max_distance_cm: float = 3000
+    short_pass_speed_cm_per_second: float = 1200
+    moderate_pass_speed_cm_per_second: float = 1800
+    long_pass_speed_cm_per_second: float = 2400
     maximum_ball_speed_cm_per_second: float = 3000
+    # Hard tactical constraint: no direct or into-space pass may travel more
+    # than 60 metres, regardless of its requested duration or ball speed.
+    maximum_pass_distance_cm: float = 6000
     player_speed_cm_per_second: float = 650
     lane_clearance_cm: float = 150
     interception_margin_seconds: float = 0.15
     # How long a receiver may run before the pass must begin.
     receiver_arrival_tolerance_seconds: float = 5
-    # Maximum raw preparation gap before considering overlap with prior play.
-    maximum_ball_carrier_hold_seconds: float = 5
+    # A receiver who cannot meet the ball at normal speed makes this candidate
+    # infeasible instead of forcing the passer to stand still after receiving.
+    # Set above zero only for experiments that intentionally model a hold.
+    maximum_ball_carrier_hold_seconds: float = 0
     maximum_duration_seconds: float = 10
 
     def __post_init__(self) -> None:
-        if self.ball_speed_cm_per_second <= 0:
-            raise InvalidPassPolicyError("Ball speed must be positive")
+        if self.short_pass_max_distance_cm <= 0:
+            raise InvalidPassPolicyError("Short-pass distance must be positive")
+        if self.moderate_pass_max_distance_cm < self.short_pass_max_distance_cm:
+            raise InvalidPassPolicyError(
+                "Moderate-pass distance cannot be shorter than short-pass distance"
+            )
+        if self.maximum_pass_distance_cm < self.moderate_pass_max_distance_cm:
+            raise InvalidPassPolicyError(
+                "Maximum pass distance cannot be shorter than moderate-pass distance"
+            )
+        configured_speeds = (
+            self.short_pass_speed_cm_per_second,
+            self.moderate_pass_speed_cm_per_second,
+            self.long_pass_speed_cm_per_second,
+        )
+        if any(speed <= 0 for speed in configured_speeds):
+            raise InvalidPassPolicyError("Pass speeds must be positive")
         if self.maximum_ball_speed_cm_per_second <= 0:
             raise InvalidPassPolicyError("Maximum ball speed must be positive")
-        if self.ball_speed_cm_per_second > self.maximum_ball_speed_cm_per_second:
+        if self.maximum_pass_distance_cm <= 0:
+            raise InvalidPassPolicyError("Maximum pass distance must be positive")
+        if max(configured_speeds) > self.maximum_ball_speed_cm_per_second:
             raise InvalidPassPolicyError(
-                "Default ball speed cannot exceed maximum ball speed"
+                "Configured pass speeds cannot exceed maximum ball speed"
             )
         if self.player_speed_cm_per_second <= 0:
             raise InvalidPassPolicyError("Player speed must be positive")
@@ -71,6 +97,13 @@ class PassType(StrEnum):
     PASS_TO_SPACE = "PASS_TO_SPACE"
 
 
+class PassDistanceCategory(StrEnum):
+    """Distance band used to choose the pass's nominal ball speed."""
+    SHORT = "SHORT"
+    MODERATE = "MODERATE"
+    LONG = "LONG"
+
+
 class PassIssueCode(StrEnum):
     """Stable reasons a pass analysis is infeasible."""
     PASSER_DOES_NOT_CONTROL_BALL = "passer_does_not_control_ball"
@@ -83,6 +116,7 @@ class PassIssueCode(StrEnum):
     INVALID_DURATION = "invalid_duration"
     MAXIMUM_DURATION_EXCEEDED = "maximum_duration_exceeded"
     REQUIRED_BALL_SPEED_EXCEEDS_LIMIT = "required_ball_speed_exceeds_limit"
+    PASS_OUT_OF_RANGE = "pass_out_of_range"
     BLOCKED_PASSING_LANE = "blocked_passing_lane"
     INTERCEPTION_RISK = "interception_risk"
     RECEIVER_ARRIVES_TOO_LATE = "receiver_arrives_too_late"
@@ -108,6 +142,7 @@ class DefenderInterception:
 @dataclass(frozen=True, slots=True)
 class PassAnalysis:
     pass_type: PassType
+    distance_category: PassDistanceCategory
     passer_id: str
     receiver_id: str
     target_zone_id: str | None
@@ -127,6 +162,28 @@ class PassAnalysis:
     issues: tuple[PassIssue, ...]
     arrival_ball_position: Vector2
     expected_possession_player_id: str | None
+
+
+def _pass_distance_category(
+    pass_distance_cm: float,
+    policy: PassPolicy,
+) -> PassDistanceCategory:
+    if pass_distance_cm <= policy.short_pass_max_distance_cm + EPSILON:
+        return PassDistanceCategory.SHORT
+    if pass_distance_cm <= policy.moderate_pass_max_distance_cm + EPSILON:
+        return PassDistanceCategory.MODERATE
+    return PassDistanceCategory.LONG
+
+
+def _nominal_pass_speed(
+    category: PassDistanceCategory,
+    policy: PassPolicy,
+) -> float:
+    return {
+        PassDistanceCategory.SHORT: policy.short_pass_speed_cm_per_second,
+        PassDistanceCategory.MODERATE: policy.moderate_pass_speed_cm_per_second,
+        PassDistanceCategory.LONG: policy.long_pass_speed_cm_per_second,
+    }[category]
 
 
 def _possession_issues(state: GameState, passer_id: str) -> list[PassIssue]:
@@ -220,6 +277,14 @@ def analyze_pass_to_position(
         issues.append(PassIssue(PassIssueCode.DESTINATION_OUTSIDE_FIELD, "Pass destination is outside the field"))
 
     pass_distance = distance(state.ball.position, destination)
+    distance_category = _pass_distance_category(pass_distance, policy)
+    if pass_distance > policy.maximum_pass_distance_cm + EPSILON:
+        issues.append(
+            PassIssue(
+                PassIssueCode.PASS_OUT_OF_RANGE,
+                "Pass distance exceeds the 60-metre maximum",
+            )
+        )
     if requested_duration_seconds is not None and requested_duration_seconds <= 0:
         issues.append(PassIssue(PassIssueCode.INVALID_DURATION, "Requested duration must be greater than zero"))
         duration = 0
@@ -230,7 +295,7 @@ def analyze_pass_to_position(
         ball_speed = 0
         velocity = Vector2(0, 0)
     elif requested_duration_seconds is None:
-        ball_speed = policy.ball_speed_cm_per_second
+        ball_speed = _nominal_pass_speed(distance_category, policy)
         duration = travel_time(state.ball.position, destination, ball_speed)
         velocity = required_velocity(state.ball.position, destination, duration)
     else:
@@ -240,15 +305,28 @@ def analyze_pass_to_position(
         if ball_speed > policy.maximum_ball_speed_cm_per_second + EPSILON:
             issues.append(PassIssue(PassIssueCode.REQUIRED_BALL_SPEED_EXCEEDS_LIMIT, "Requested pass requires excessive ball speed"))
 
-    if duration > policy.maximum_duration_seconds:
-        issues.append(PassIssue(PassIssueCode.MAXIMUM_DURATION_EXCEEDED, "Pass duration exceeds the configured maximum"))
-
     receiver_distance = distance(receiver.position, destination)
     receiver_arrival = travel_time(
         receiver.position,
         destination,
         policy.player_speed_cm_per_second * receiver.speed_category.multiplier,
     )
+    if (
+        pass_type == PassType.PASS_TO_SPACE
+        and requested_duration_seconds is None
+        and pass_distance > EPSILON
+        and receiver_arrival > duration
+    ):
+        # Weight an implicit lead pass so it arrives with the runner. This keeps
+        # the release at the phase boundary instead of making the new ball
+        # carrier stand still until a faster, later pass becomes possible.
+        duration = receiver_arrival
+        ball_speed = required_speed(state.ball.position, destination, duration)
+        velocity = required_velocity(state.ball.position, destination, duration)
+
+    if duration > policy.maximum_duration_seconds:
+        issues.append(PassIssue(PassIssueCode.MAXIMUM_DURATION_EXCEEDED, "Pass duration exceeds the configured maximum"))
+
     hold_time = (
         max(0, receiver_arrival - duration)
         if pass_type == PassType.PASS_TO_SPACE
@@ -291,6 +369,7 @@ def analyze_pass_to_position(
     feasible = not issues
     return PassAnalysis(
         pass_type=pass_type,
+        distance_category=distance_category,
         passer_id=passer.id,
         receiver_id=receiver.id,
         target_zone_id=target_zone_id,

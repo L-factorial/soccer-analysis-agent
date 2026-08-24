@@ -16,6 +16,7 @@ export const FIELD_SUBMISSION_SCHEMA_VERSION = "1.0" as const;
 export type SubmittedPlayer = {
   id: string;
   name: string;
+  profileName?: string;
   number: number;
   teamId: string;
   position: Position;
@@ -86,6 +87,9 @@ export function createFieldSubmission(
       players: configuration.players.map((player) => ({
         id: player.id,
         name: player.name,
+        ...(player.profileName?.trim()
+          ? { profileName: player.profileName.trim() }
+          : {}),
         number: player.number,
         teamId: player.teamId,
         position: { ...player.position },

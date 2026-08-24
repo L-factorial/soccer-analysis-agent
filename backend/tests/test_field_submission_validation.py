@@ -1,8 +1,14 @@
 import unittest
+from types import SimpleNamespace
 
 from fastapi import HTTPException
 
-from app.api.field_configurations import receive_field_configuration
+from app.api.field_configurations import (
+    _select_distinct_solutions,
+    _sequence_tactical_signature,
+    analyze_field_configuration,
+    receive_field_configuration,
+)
 from app.models.field_submission import FieldSubmission
 from app.validation import FieldSubmissionValidationError, validate_field_submission
 
@@ -74,7 +80,72 @@ def valid_payload() -> dict:
     }
 
 
+def tactical_sequence(sequence_id: str, destinations: tuple[tuple[float, float], ...]):
+    """Build the minimum phase shape needed by alternative-route comparison."""
+    steps = []
+    for x, y in destinations:
+        action = SimpleNamespace(
+            action_type=SimpleNamespace(value="MOVE_WITH_BALL"),
+            actor_id="team1-7",
+            receiver_id=None,
+            destination=SimpleNamespace(x=x, y=y),
+        )
+        steps.append(
+            SimpleNamespace(
+                phase=SimpleNamespace(primary_action=action),
+                simulation=SimpleNamespace(
+                    previous_state=SimpleNamespace(
+                        field=SimpleNamespace(width=9000.0)
+                    )
+                ),
+            )
+        )
+    return SimpleNamespace(id=sequence_id, steps=tuple(steps))
+
+
+class AlternativeRouteSelectionTests(unittest.TestCase):
+    def test_nearby_endpoints_and_split_dribbles_are_the_same_route(self):
+        primary = tactical_sequence("primary", ((5000, 1700),))
+        near_duplicate = tactical_sequence(
+            "near-duplicate",
+            ((5400, 1900), (5900, 2100)),
+        )
+
+        self.assertEqual(
+            _sequence_tactical_signature(primary),
+            _sequence_tactical_signature(near_duplicate),
+        )
+        self.assertEqual(
+            _select_distinct_solutions(primary, (near_duplicate,), 2),
+            (primary,),
+        )
+
+    def test_a_different_attacking_channel_is_retained(self):
+        primary = tactical_sequence("primary", ((5000, 1700),))
+        opposite_channel = tactical_sequence("opposite", ((5000, 7400),))
+
+        self.assertEqual(
+            _select_distinct_solutions(primary, (opposite_channel,), 2),
+            (primary, opposite_channel),
+        )
+
+
 class FieldSubmissionValidationTests(unittest.TestCase):
+    def test_accepts_separate_optional_player_profile_name(self):
+        payload = valid_payload()
+        payload["fieldConfiguration"]["players"][0]["profileName"] = "Alex"
+
+        submission = FieldSubmission.model_validate(payload)
+
+        self.assertEqual(
+            submission.field_configuration.players[0].name,
+            "team1-1",
+        )
+        self.assertEqual(
+            submission.field_configuration.players[0].profile_name,
+            "Alex",
+        )
+
     def test_accepts_valid_static_field(self) -> None:
         submission = FieldSubmission.model_validate(valid_payload())
 

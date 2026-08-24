@@ -3,6 +3,8 @@ import unittest
 
 from app.analysis import (
     ActionType,
+    ShotIssueCode,
+    ShotPolicy,
     analyze_all_shots,
     analyze_shot,
     generate_action_candidates,
@@ -70,6 +72,64 @@ class ShootingTests(unittest.TestCase):
         self.assertTrue(team2_shot.feasible)
         self.assertEqual(team2_shot.goal_id, "goal-left")
         self.assertEqual(team2_shot.goal_space_id, "GoalSpace-team2")
+
+    def test_shot_is_rejected_beyond_five_yards_outside_penalty_arc(self) -> None:
+        payload = valid_payload()
+        field = payload["fieldConfiguration"]
+        goal_center_x = 11900
+        maximum_distance = ShotPolicy().maximum_shot_distance_cm
+        position = {"x": goal_center_x - maximum_distance - 1, "y": 4500}
+        field["players"] = [
+            {
+                "id": "team1-1",
+                "name": "team1-1",
+                "number": 2,
+                "teamId": "team1",
+                "position": position,
+                "orientation": 0,
+                "velocity": {"x": 0, "y": 0},
+            }
+        ]
+        field["ball"]["position"] = position
+        submission = FieldSubmission.model_validate(payload)
+        validate_field_submission(submission)
+        state = analyze_game_state(build_initial_game_state(submission)).game_state
+
+        shot = analyze_shot(state, "team1-1")
+
+        self.assertFalse(shot.feasible)
+        self.assertIn(
+            ShotIssueCode.SHOT_OUT_OF_RANGE,
+            {issue.code for issue in shot.issues},
+        )
+
+    def test_shot_is_allowed_at_five_yard_boundary(self) -> None:
+        payload = valid_payload()
+        field = payload["fieldConfiguration"]
+        maximum_distance = ShotPolicy().maximum_shot_distance_cm
+        position = {"x": 11900 - maximum_distance, "y": 4500}
+        field["players"] = [
+            {
+                "id": "team1-1",
+                "name": "team1-1",
+                "number": 2,
+                "teamId": "team1",
+                "position": position,
+                "orientation": 0,
+                "velocity": {"x": 0, "y": 0},
+            }
+        ]
+        field["ball"]["position"] = position
+        submission = FieldSubmission.model_validate(payload)
+        validate_field_submission(submission)
+        state = analyze_game_state(build_initial_game_state(submission)).game_state
+
+        shot = analyze_shot(state, "team1-1")
+
+        self.assertNotIn(
+            ShotIssueCode.SHOT_OUT_OF_RANGE,
+            {issue.code for issue in shot.issues},
+        )
 
     def test_shot_transition_marks_terminal_scored_state(self) -> None:
         _, analyzed = shooting_state("team1")
@@ -167,10 +227,10 @@ class ShootingTests(unittest.TestCase):
                 "name": "OpenSpace1",
                 "type": "circular",
                 "center": {
-                    "x": 7708.154506437768,
-                    "y": 1648.4127777612057,
+                    "x": 7900,
+                    "y": 4500,
                 },
-                "radius": 1648.4127777612057,
+                "radius": 1700,
             }
         ]
         submission = FieldSubmission.model_validate(payload)

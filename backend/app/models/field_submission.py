@@ -30,6 +30,11 @@ class SubmittedGoal(BaseModel):
 class SubmittedPlayer(BaseModel):
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
+    profile_name: str | None = Field(
+        default=None,
+        alias="profileName",
+        max_length=40,
+    )
     number: int = Field(gt=0, le=99)
     team_id: str = Field(alias="teamId", min_length=1)
     position: Position

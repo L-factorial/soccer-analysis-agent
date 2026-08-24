@@ -1,5 +1,5 @@
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from app.analysis import game_state_fingerprint
 from app.domain import GameState
@@ -8,6 +8,7 @@ from app.planning.beam import BeamPolicy, run_beam_search
 from app.phases.models import PhaseSimulationResult, TacticalPhase
 from app.phases.offside import OffsidePolicy, check_phase_offside
 from app.phases.scoring import PhaseScore
+from app.phases.scoring import consecutive_dribble_adjustment
 from app.phases.decision_rules import (
     PhaseGenerationPolicy,
     PhaseScoringPolicy,
@@ -25,6 +26,9 @@ class PhaseSearchPolicy:
     maximum_play_duration_seconds: float = 30
     maximum_retained_nodes: int = 75
     score_discount: float = 0.9
+    # Public planning may return the best route plus distinct alternatives.
+    # This bounds response/scheduling work; it does not widen the beam itself.
+    maximum_solution_count: int = 2
 
     def __post_init__(self) -> None:
         if self.maximum_depth < 1 or self.beam_width < 1:
@@ -33,6 +37,8 @@ class PhaseSearchPolicy:
             raise ValueError("Maximum play duration must be positive")
         if self.maximum_retained_nodes < 1:
             raise ValueError("Maximum retained nodes must be positive")
+        if self.maximum_solution_count < 1:
+            raise ValueError("Maximum solution count must be positive")
         if not 0 <= self.score_discount <= 1:
             raise ValueError("Score discount must be between zero and one")
 
@@ -143,6 +149,17 @@ def search_tactical_phases(
                 continue
             analyzed = analyze_game_state(simulation.resulting_state, analysis_policy)
             score = score_phase_result(simulation, scoring_policy)
+            # Phase-local scoring rewards progress. Apply the history term here,
+            # where the preceding selected phase is available to distinguish a
+            # useful tactical change from a repeated same-carrier primitive.
+            score = replace(
+                score,
+                sequence_adjustment=consecutive_dribble_adjustment(
+                    parent.steps[-1].phase if parent.steps else None,
+                    phase,
+                    scoring_policy,
+                ),
+            )
             discounted = search_policy.score_discount ** (depth - 1) * score.total
             children.append(
                 PhaseSearchNode(

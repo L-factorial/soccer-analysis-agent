@@ -66,7 +66,9 @@ class AnimationResponseBuilderTests(unittest.TestCase):
             and event["playerId"] == pass_event["intendedReceiverId"]
         )
 
-        self.assertLess(run_event["startTime"], pass_event["startTime"])
+        # An implicitly timed lead pass is now weighted to the receiver's run,
+        # so neither the runner nor passer needs to begin in an earlier phase.
+        self.assertEqual(run_event["startTime"], pass_event["startTime"])
         self.assertAlmostEqual(
             run_event["startTime"] + run_event["duration"],
             receive_event["startTime"],

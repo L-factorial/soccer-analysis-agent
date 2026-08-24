@@ -5,6 +5,7 @@ export type PlayerSpeedCategory = "BASELINE" | "FAST" | "SUPER_FAST";
 export type Player = {
   id: string;
   name: string;
+  profileName?: string;
   number: number;
   teamId: string;
   position: Position;

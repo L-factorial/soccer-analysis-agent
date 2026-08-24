@@ -14,17 +14,30 @@ export type TimedAnimationEventBase = AnimationEventBase & {
   duration: number;
 };
 
-export type RunEvent = TimedAnimationEventBase & {
+export type ActionPace = "SLOW" | "REGULAR" | "SPRINT";
+
+export type PlayerMovementTiming = {
+  pace?: ActionPace;
+  speedCmPerSecond?: number;
+};
+
+export type PassTiming = {
+  passCategory?: "SHORT" | "MODERATE" | "LONG";
+  ballSpeedCmPerSecond?: number;
+  receiveTime?: number;
+};
+
+export type RunEvent = TimedAnimationEventBase & PlayerMovementTiming & {
   type: "RUN";
   target: EventTarget;
 };
 
-export type MoveEvent = TimedAnimationEventBase & {
+export type MoveEvent = TimedAnimationEventBase & PlayerMovementTiming & {
   type: "MOVE";
   target: EventTarget;
 };
 
-export type MoveWithBallEvent = TimedAnimationEventBase & {
+export type MoveWithBallEvent = TimedAnimationEventBase & PlayerMovementTiming & {
   type: "MOVE_WITH_BALL";
   target: EventTarget;
 };
@@ -35,12 +48,12 @@ export type TurnEvent = TimedAnimationEventBase & {
   targetOrientation: number;
 };
 
-export type PassEvent = TimedAnimationEventBase & {
+export type PassEvent = TimedAnimationEventBase & PassTiming & {
   type: "PASS";
   targetPlayerId: string;
 };
 
-export type PassToSpaceEvent = TimedAnimationEventBase & {
+export type PassToSpaceEvent = TimedAnimationEventBase & PassTiming & {
   type: "PASS_TO_SPACE";
   intendedReceiverId: string;
   spaceId: string;
@@ -73,14 +86,6 @@ export type AnimationEventType = AnimationEvent["type"];
 export type PlannerDiagnostics = {
     tacticalInstruction?: string | null;
     appliedDirectives?: string[];
-    agentMode?: "DETERMINISTIC" | "AGENTIC" | "TOOL_AGENT" | "AGENTIC_FALLBACK";
-    agentModel?: string | null;
-    agentAttempts?: number;
-    tacticalIntent?: Record<string, unknown> | null;
-    planEvaluation?: Record<string, unknown> | null;
-    agentFallbackReason?: string | null;
-    agentToolCalls?: number;
-    agentIterations?: number;
     objective: "SCORE_GOAL";
     plannerType: "ACTION" | "TACTICAL_PHASE";
     phaseCount: number | null;
@@ -135,6 +140,29 @@ export type AnimationResponse = {
   events: AnimationEvent[];
   diagnostics?: PlannerDiagnostics;
   alternativePlans?: AlternativePlan[];
+  phaseSnapshots?: PhaseSnapshot[];
+  commentary?: CommentaryTrack;
+};
+
+export type CommentaryCue = {
+  id: string;
+  phaseId: string;
+  startTime: number;
+  endTime: number;
+  text: string;
+};
+
+export type CommentaryTrack = {
+  title: string;
+  summary: string;
+  cues: CommentaryCue[];
+};
+
+export type PhaseSnapshot = {
+  phaseId: string;
+  phaseIndex: number;
+  atTime: number;
+  openSpaces: { id: string; center: EventTarget; radius: number }[];
 };
 
 export type AlternativePlan = {
@@ -144,4 +172,6 @@ export type AlternativePlan = {
   duration: number;
   events: AnimationEvent[];
   diagnostics?: PlannerDiagnostics;
+  phaseSnapshots?: PhaseSnapshot[];
+  commentary?: CommentaryTrack;
 };

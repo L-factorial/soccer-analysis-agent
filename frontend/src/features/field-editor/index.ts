@@ -1,4 +1,6 @@
 export { BallMarker } from "./BallMarker";
+export { DynamicOpenSpaceOverlay } from "./DynamicOpenSpaceOverlay";
+export type { DynamicOpenSpace } from "./DynamicOpenSpaceOverlay";
 export { FieldCanvas } from "./FieldCanvas";
 export { FieldSurface } from "./FieldSurface";
 export { GoalMarker } from "./GoalMarker";

@@ -17,11 +17,16 @@ class MoveEvent(TimedEvent):
     """Player translation: generic move, coordinated run, or controlled dribble."""
     type: Literal["MOVE", "RUN", "MOVE_WITH_BALL"]
     target: Position
+    pace: Literal["SLOW", "REGULAR", "SPRINT"] | None = None
+    speed_cm_per_second: float | None = Field(
+        default=None, serialization_alias="speedCmPerSecond", ge=0
+    )
 
 
 class TurnEvent(TimedEvent):
-    """Rotation performed before movement or ball release when required."""
+    """Facing update; duration is zero while physical turn cost is disabled."""
     type: Literal["TURN"]
+    duration: float = Field(ge=0)
     start_orientation: float = Field(serialization_alias="startOrientation")
     target_orientation: float = Field(serialization_alias="targetOrientation")
 
@@ -30,6 +35,15 @@ class PassEvent(TimedEvent):
     """Direct player-to-player ball travel."""
     type: Literal["PASS"]
     target_player_id: str = Field(serialization_alias="targetPlayerId")
+    pass_category: Literal["SHORT", "MODERATE", "LONG"] | None = Field(
+        default=None, serialization_alias="passCategory"
+    )
+    ball_speed_cm_per_second: float | None = Field(
+        default=None, serialization_alias="ballSpeedCmPerSecond", ge=0
+    )
+    receive_time: float | None = Field(
+        default=None, serialization_alias="receiveTime", ge=0
+    )
 
 
 class PassToSpaceEvent(TimedEvent):
@@ -38,6 +52,15 @@ class PassToSpaceEvent(TimedEvent):
     intended_receiver_id: str = Field(serialization_alias="intendedReceiverId")
     space_id: str = Field(serialization_alias="spaceId")
     target: Position
+    pass_category: Literal["SHORT", "MODERATE", "LONG"] | None = Field(
+        default=None, serialization_alias="passCategory"
+    )
+    ball_speed_cm_per_second: float | None = Field(
+        default=None, serialization_alias="ballSpeedCmPerSecond", ge=0
+    )
+    receive_time: float | None = Field(
+        default=None, serialization_alias="receiveTime", ge=0
+    )
 
 
 class ShotEvent(TimedEvent):
@@ -117,28 +140,6 @@ class PlannerDiagnostics(BaseModel):
         default=(),
         serialization_alias="appliedDirectives",
     )
-    agent_mode: Literal[
-        "DETERMINISTIC", "AGENTIC", "TOOL_AGENT", "AGENTIC_FALLBACK"
-    ] = Field(
-        default="DETERMINISTIC",
-        serialization_alias="agentMode",
-    )
-    agent_model: str | None = Field(default=None, serialization_alias="agentModel")
-    agent_attempts: int = Field(default=0, serialization_alias="agentAttempts")
-    tactical_intent: dict | None = Field(
-        default=None,
-        serialization_alias="tacticalIntent",
-    )
-    plan_evaluation: dict | None = Field(
-        default=None,
-        serialization_alias="planEvaluation",
-    )
-    agent_fallback_reason: str | None = Field(
-        default=None,
-        serialization_alias="agentFallbackReason",
-    )
-    agent_tool_calls: int = Field(default=0, serialization_alias="agentToolCalls")
-    agent_iterations: int = Field(default=0, serialization_alias="agentIterations")
     planner_type: Literal["ACTION", "TACTICAL_PHASE"] = Field(
         default="ACTION",
         serialization_alias="plannerType",
@@ -182,6 +183,25 @@ class AlternativePlan(BaseModel):
     duration: float = Field(ge=0)
     events: tuple[AnimationEvent, ...]
     diagnostics: PlannerDiagnostics | None = None
+    phase_snapshots: tuple[dict, ...] = Field(
+        default=(), serialization_alias="phaseSnapshots"
+    )
+
+
+class CommentaryCue(BaseModel):
+    """LLM-authored prose anchored to scheduler-owned phase timestamps."""
+    id: str
+    phase_id: str = Field(serialization_alias="phaseId")
+    start_time: float = Field(serialization_alias="startTime", ge=0)
+    end_time: float = Field(serialization_alias="endTime", ge=0)
+    text: str
+
+
+class CommentaryTrack(BaseModel):
+    """Optional narration that cannot alter the authoritative event timeline."""
+    title: str
+    summary: str
+    cues: tuple[CommentaryCue, ...]
 
 
 class AnimationResponse(BaseModel):
@@ -192,3 +212,9 @@ class AnimationResponse(BaseModel):
     alternative_plans: tuple[AlternativePlan, ...] = Field(
         default=(), serialization_alias="alternativePlans"
     )
+    # Timed standard-planner snapshots let the UI update computed open spaces
+    # at selected phase boundaries without turning them into animation events.
+    phase_snapshots: tuple[dict, ...] = Field(
+        default=(), serialization_alias="phaseSnapshots"
+    )
+    commentary: CommentaryTrack | None = None

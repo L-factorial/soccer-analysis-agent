@@ -175,7 +175,11 @@ class ActionCandidateTests(unittest.TestCase):
             for candidate in dribbles
             if candidate.source_analysis.dribble_direction is not None
         )
-        self.assertEqual(len(short_dribbles), 6)
+        self.assertEqual(len(short_dribbles), 18)
+        self.assertEqual(
+            {candidate.source_analysis.pace.value for candidate in short_dribbles},
+            {"SLOW", "REGULAR", "SPRINT"},
+        )
         self.assertEqual(
             {
                 candidate.source_analysis.travel_duration_seconds

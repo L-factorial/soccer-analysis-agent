@@ -14,7 +14,11 @@ import {
 } from "react-native";
 
 import { FieldCanvas } from "../src/features/field-editor";
-import { analyzeFieldConfiguration } from "../src/api/analyze-field";
+import { CommentaryPanel } from "../src/features/commentary";
+import {
+  analyzeFieldConfiguration,
+  generateCommentary,
+} from "../src/api/analyze-field";
 import {
   animationFrameToSeconds,
   ManualAnimationBuilder,
@@ -22,6 +26,7 @@ import {
 } from "../src/features/animation-playback";
 import {
   AnimationResponse,
+  AlternativePlan,
   createFieldConfiguration,
   FIELD_LENGTH_CM,
   FIELD_WIDTH_CM,
@@ -36,6 +41,17 @@ import {
 const PRESET_MAPS = ["Balanced", "High press", "Build from back"] as const;
 type SetupMode = "Create new" | "Use preset";
 type AnalysisStatus = "idle" | "loading" | "success" | "error";
+type CommentaryStatus = "idle" | "loading" | "ready" | "unavailable";
+
+function alternativeResponse(plan: AlternativePlan): AnimationResponse {
+  return {
+    duration: plan.duration,
+    events: plan.events,
+    diagnostics: plan.diagnostics,
+    phaseSnapshots: plan.phaseSnapshots,
+    commentary: plan.commentary,
+  };
+}
 
 type ChoiceButtonProps = {
   label: string;
@@ -156,6 +172,9 @@ export default function HomeScreen() {
   const [isPlanDropdownOpen, setIsPlanDropdownOpen] = useState(false);
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>("idle");
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [commentaryStatuses, setCommentaryStatuses] = useState<
+    Record<string, CommentaryStatus>
+  >({});
   const [tacticalInstruction, setTacticalInstruction] = useState("");
   const [setupMode, setSetupMode] = useState<SetupMode>("Create new");
   const [preset, setPreset] = useState<(typeof PRESET_MAPS)[number]>("Balanced");
@@ -170,11 +189,15 @@ export default function HomeScreen() {
   const [isSequenceEditorOpen, setIsSequenceEditorOpen] = useState(false);
   const fieldRef = useRef<View>(null);
   const analysisAbortController = useRef<AbortController | null>(null);
+  const selectedPlanIdRef = useRef("requested");
   const openSpaceSequence = useRef(1);
   const playerCount = Number.parseInt(fieldConfiguration.fieldType, 10);
   const selectedTeam =
     fieldConfiguration.teams.find(({ id }) => id === selectedTeamId) ??
     fieldConfiguration.teams[0];
+  const selectedFieldPlayer = orientationPlayerId
+    ? fieldConfiguration.players.find(({ id }) => id === orientationPlayerId)
+    : undefined;
   const availablePlayers = Array.from(
     { length: playerCount },
     (_, index) => ({
@@ -186,9 +209,42 @@ export default function HomeScreen() {
     fieldConfiguration,
     animationResponse,
   );
+  const displayedConfiguration = useMemo(() => {
+    const profileNames = new Map(
+      fieldConfiguration.players.map((player) => [player.id, player.profileName]),
+    );
+    return {
+      ...session.animatedConfiguration,
+      // Animation state updates through an effect. Overlay editor-only profile
+      // metadata synchronously so the label appears on the same render as input.
+      players: session.animatedConfiguration.players.map((player) => ({
+        ...player,
+        profileName: profileNames.get(player.id),
+      })),
+    };
+  }, [fieldConfiguration.players, session.animatedConfiguration]);
   const isPlaybackReady =
     analysisStatus === "success" && animationResponse.events.length > 0;
   const playbackSeconds = animationFrameToSeconds(session.currentTime);
+  const phaseSnapshots = animationResponse.phaseSnapshots ?? [];
+  const activePhaseSnapshot = [...phaseSnapshots]
+    .reverse()
+    .find((snapshot) => snapshot.atTime <= playbackSeconds);
+  const activeStandardOpenSpaces = activePhaseSnapshot?.openSpaces.filter(
+    (space): space is {
+      id: string;
+      center: { x: number; y: number };
+      radius: number;
+    } => "radius" in space,
+  );
+  const responseHasStandardSnapshotSpaces = phaseSnapshots.some((snapshot) =>
+    snapshot.openSpaces.some((space) => "radius" in space),
+  );
+  // Older standard responses only expose root spaces in diagnostics. Keep
+  // that payload visible while newer responses use timed phase snapshots.
+  const visibleStandardOpenSpaces = responseHasStandardSnapshotSpaces
+    ? activeStandardOpenSpaces ?? []
+    : animationResponse.diagnostics?.dynamicSpaces ?? [];
   const selectedPhases = animationResponse.diagnostics?.selectedPhases ?? [];
   const activePhase =
     selectedPhases.find(
@@ -209,15 +265,15 @@ export default function HomeScreen() {
     ({ id }) => id === selectedPlanId,
   );
   const selectedPlanLabel = selectedAlternative?.label ?? "Requested plan";
-  const selectedPlanReason =
-    selectedAlternative?.reason ?? "Follows your tactical instruction.";
 
   useEffect(() => {
     analysisAbortController.current?.abort();
     setAnalysisStatus("idle");
     setAnalysisError(null);
+    setCommentaryStatuses({});
     setAnimationResponse({ duration: 0, events: [] });
     setPrimaryPlanResponse(null);
+    selectedPlanIdRef.current = "requested";
     setSelectedPlanId("requested");
     setIsPlanDropdownOpen(false);
   }, [fieldConfiguration]);
@@ -234,6 +290,7 @@ export default function HomeScreen() {
     pause();
     setAnalysisStatus("loading");
     setAnalysisError(null);
+    setCommentaryStatuses({});
     setAnimationResponse({ duration: 0, events: [] });
 
     try {
@@ -245,9 +302,65 @@ export default function HomeScreen() {
       if (!controller.signal.aborted) {
         setAnimationResponse(response);
         setPrimaryPlanResponse(response);
+        selectedPlanIdRef.current = "requested";
         setSelectedPlanId("requested");
         setIsPlanDropdownOpen(false);
         setAnalysisStatus("success");
+        const commentaryPlans = [
+          { id: "requested", response },
+          ...(response.alternativePlans ?? []).map((plan) => ({
+            id: plan.id,
+            response: alternativeResponse(plan),
+          })),
+        ];
+        setCommentaryStatuses(
+          Object.fromEntries(commentaryPlans.map(({ id }) => [id, "loading"])),
+        );
+        // Each selectable plan owns an independent asynchronous commentary
+        // request. One failure never blocks simulation or the other plans.
+        for (const commentaryPlan of commentaryPlans) {
+          void generateCommentary(
+            fieldConfiguration,
+            commentaryPlan.response,
+            tacticalInstruction,
+            controller.signal,
+          )
+            .then((commentary) => {
+              if (controller.signal.aborted) return;
+              setPrimaryPlanResponse((current) => {
+                if (!current) return current;
+                if (commentaryPlan.id === "requested") {
+                  return { ...current, commentary };
+                }
+                return {
+                  ...current,
+                  alternativePlans: current.alternativePlans?.map((plan) =>
+                    plan.id === commentaryPlan.id ? { ...plan, commentary } : plan,
+                  ),
+                };
+              });
+              if (selectedPlanIdRef.current === commentaryPlan.id) {
+                pause();
+                reset();
+                setAnimationResponse({
+                  ...commentaryPlan.response,
+                  commentary,
+                });
+              }
+              setCommentaryStatuses((current) => ({
+                ...current,
+                [commentaryPlan.id]: "ready",
+              }));
+            })
+            .catch(() => {
+              if (!controller.signal.aborted) {
+                setCommentaryStatuses((current) => ({
+                  ...current,
+                  [commentaryPlan.id]: "unavailable",
+                }));
+              }
+            });
+        }
       }
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -257,6 +370,14 @@ export default function HomeScreen() {
         );
       }
     }
+  }
+
+  function selectPlan(id: string, response: AnimationResponse) {
+    pause();
+    selectedPlanIdRef.current = id;
+    setAnimationResponse(response);
+    setSelectedPlanId(id);
+    setIsPlanDropdownOpen(false);
   }
 
   function updateManualAnimation(response: AnimationResponse) {
@@ -306,7 +427,10 @@ export default function HomeScreen() {
         );
         const player = {
           id,
-          name: `${team?.name ?? "team"}-${number}`,
+          // Preserve internal identity and the optional coach-facing profile
+          // name when repositioning an existing player.
+          name: existing?.name ?? `${team?.name ?? "team"}-${number}`,
+          profileName: existing?.profileName,
           number,
           teamId,
           position,
@@ -348,6 +472,15 @@ export default function HomeScreen() {
         ),
       };
     });
+  }, []);
+
+  const setPlayerProfileName = useCallback((id: string, profileName: string) => {
+    setFieldConfiguration((current) => ({
+      ...current,
+      players: current.players.map((player) =>
+        player.id === id ? { ...player, profileName } : player,
+      ),
+    }));
   }, []);
 
 
@@ -873,6 +1006,100 @@ export default function HomeScreen() {
                   {analysisStatus === "loading" ? "Analyzing…" : "Analyze"}
                 </Text>
               </Pressable>
+              {primaryPlanResponse &&
+                (primaryPlanResponse.alternativePlans?.length ?? 0) > 0 && (
+                  <View style={styles.headerPlanSelector}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: isPlanDropdownOpen }}
+                      onPress={() => setIsPlanDropdownOpen((open) => !open)}
+                      style={styles.headerPlanButton}
+                    >
+                      <Text style={styles.planOptionLabel}>{selectedPlanLabel}</Text>
+                      <Text
+                        style={[
+                          styles.commentaryIndicator,
+                          commentaryStatuses[selectedPlanId] === "ready" &&
+                            styles.commentaryIndicatorReady,
+                        ]}
+                      >
+                        {commentaryStatuses[selectedPlanId] === "loading"
+                          ? "…"
+                          : commentaryStatuses[selectedPlanId] === "ready"
+                            ? "✓"
+                            : ""}
+                      </Text>
+                      <Text style={styles.planDropdownChevron}>
+                        {isPlanDropdownOpen ? "▲" : "▼"}
+                      </Text>
+                    </Pressable>
+                    {isPlanDropdownOpen && (
+                      <View style={styles.headerPlanMenu}>
+                        <Pressable
+                          onPress={() =>
+                            selectPlan("requested", primaryPlanResponse)
+                          }
+                          style={[
+                            styles.planDropdownItem,
+                            selectedPlanId === "requested" &&
+                              styles.planOptionSelected,
+                          ]}
+                        >
+                          <View style={styles.planItemRow}>
+                            <Text style={styles.planOptionLabel}>Requested plan</Text>
+                            <Text
+                              style={[
+                                styles.commentaryIndicator,
+                                commentaryStatuses.requested === "ready" &&
+                                  styles.commentaryIndicatorReady,
+                              ]}
+                            >
+                              {commentaryStatuses.requested === "loading"
+                                ? "Loading…"
+                                : commentaryStatuses.requested === "ready"
+                                  ? "✓"
+                                  : commentaryStatuses.requested === "unavailable"
+                                    ? "—"
+                                    : ""}
+                            </Text>
+                          </View>
+                        </Pressable>
+                        {primaryPlanResponse.alternativePlans?.map((plan) => (
+                          <Pressable
+                            key={plan.id}
+                            onPress={() =>
+                              selectPlan(plan.id, alternativeResponse(plan))
+                            }
+                            style={[
+                              styles.planDropdownItem,
+                              selectedPlanId === plan.id &&
+                                styles.planOptionSelected,
+                            ]}
+                          >
+                            <View style={styles.planItemRow}>
+                              <Text style={styles.planOptionLabel}>{plan.label}</Text>
+                              <Text
+                                style={[
+                                  styles.commentaryIndicator,
+                                  commentaryStatuses[plan.id] === "ready" &&
+                                    styles.commentaryIndicatorReady,
+                                ]}
+                              >
+                                {commentaryStatuses[plan.id] === "loading"
+                                  ? "Loading…"
+                                  : commentaryStatuses[plan.id] === "ready"
+                                    ? "✓"
+                                    : commentaryStatuses[plan.id] === "unavailable"
+                                      ? "—"
+                                      : ""}
+                              </Text>
+                            </View>
+                          </Pressable>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                )}
               <Text style={styles.playbackTime}>
                 {playbackSeconds.toFixed(2)} / {session.response.duration}s
               </Text>
@@ -902,6 +1129,12 @@ export default function HomeScreen() {
               >
                 <Text style={styles.resetButtonText}>Reset</Text>
               </Pressable>
+              <CommentaryPanel
+                commentary={animationResponse.commentary}
+                loading={commentaryStatuses[selectedPlanId] === "loading"}
+                playbackSeconds={playbackSeconds}
+                playbackStatus={session.status}
+              />
             </View>
           </View>
 
@@ -910,70 +1143,6 @@ export default function HomeScreen() {
               {analysisError}
             </Text>
           )}
-
-          {primaryPlanResponse &&
-            (primaryPlanResponse.alternativePlans?.length ?? 0) > 0 && (
-              <View style={styles.planOptions}>
-                <Text style={styles.planOptionsTitle}>Planning options</Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: isPlanDropdownOpen }}
-                  onPress={() => setIsPlanDropdownOpen((open) => !open)}
-                  style={styles.planDropdownButton}
-                >
-                  <View style={styles.planDropdownText}>
-                    <Text style={styles.planOptionLabel}>{selectedPlanLabel}</Text>
-                    <Text style={styles.planOptionReason}>{selectedPlanReason}</Text>
-                  </View>
-                  <Text style={styles.planDropdownChevron}>
-                    {isPlanDropdownOpen ? "▲" : "▼"}
-                  </Text>
-                </Pressable>
-                {isPlanDropdownOpen && (
-                  <View style={styles.planDropdownMenu}>
-                  <Pressable
-                    onPress={() => {
-                      pause();
-                      setAnimationResponse(primaryPlanResponse);
-                      setSelectedPlanId("requested");
-                      setIsPlanDropdownOpen(false);
-                    }}
-                    style={[
-                      styles.planDropdownItem,
-                      selectedPlanId === "requested" && styles.planOptionSelected,
-                    ]}
-                  >
-                    <Text style={styles.planOptionLabel}>Requested plan</Text>
-                    <Text style={styles.planOptionReason}>
-                      Follows your tactical instruction.
-                    </Text>
-                  </Pressable>
-                  {primaryPlanResponse.alternativePlans?.map((plan) => (
-                    <Pressable
-                      key={plan.id}
-                      onPress={() => {
-                        pause();
-                        setAnimationResponse({
-                          duration: plan.duration,
-                          events: plan.events,
-                          diagnostics: plan.diagnostics,
-                        });
-                        setSelectedPlanId(plan.id);
-                        setIsPlanDropdownOpen(false);
-                      }}
-                      style={[
-                        styles.planDropdownItem,
-                        selectedPlanId === plan.id && styles.planOptionSelected,
-                      ]}
-                    >
-                      <Text style={styles.planOptionLabel}>{plan.label}</Text>
-                      <Text style={styles.planOptionReason}>{plan.reason}</Text>
-                    </Pressable>
-                  ))}
-                  </View>
-                )}
-              </View>
-            )}
 
           {selectedPhases.length > 0 && (
             <View style={styles.planSummary}>
@@ -1024,10 +1193,39 @@ export default function HomeScreen() {
             </View>
           )}
 
+          {selectedFieldPlayer && (
+            <View style={styles.selectedPlayerEditor}>
+              <View style={styles.selectedPlayerEditorHeading}>
+                <Text style={styles.selectedPlayerEditorTitle}>
+                  Player {selectedFieldPlayer.number}
+                </Text>
+                <Text style={styles.selectedPlayerEditorMeta}>
+                  {selectedFieldPlayer.speedCategory.replaceAll("_", " ")} · {Math.round(selectedFieldPlayer.orientation)}°
+                </Text>
+              </View>
+              <TextInput
+                accessibilityLabel={`Player ${selectedFieldPlayer.number} name`}
+                maxLength={40}
+                onChangeText={(profileName) =>
+                  setPlayerProfileName(selectedFieldPlayer.id, profileName)
+                }
+                placeholder="Enter profile name"
+                placeholderTextColor="#89918C"
+                selectTextOnFocus
+                style={styles.playerNameInput}
+                value={selectedFieldPlayer.profileName ?? ""}
+              />
+              <Text style={styles.selectedPlayerEditorHint}>
+                Drag the dial for orientation. Click the player again to change capability.
+              </Text>
+            </View>
+          )}
+
           <View style={[styles.fieldFrame, isWide && styles.fieldFrameWide]}>
             <FieldCanvas
               attackingTeamId={animationResponse.diagnostics?.attackingTeamId}
-              configuration={session.animatedConfiguration}
+              configuration={displayedConfiguration}
+              dynamicOpenSpaces={visibleStandardOpenSpaces}
               onBallMove={placeBall}
               onFieldPress={placeSelectedElement}
               onOpenSpaceMove={moveOpenSpace}
@@ -1305,6 +1503,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 8,
+    overflow: "visible",
+    position: "relative",
+    zIndex: 200,
   },
   workspaceTitle: {
     color: "#18251F",
@@ -1320,6 +1521,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: 8,
+    zIndex: 30,
   },
   tacticalInstructionInput: {
     backgroundColor: "#FFFFFF",
@@ -1352,43 +1554,54 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginBottom: 8,
   },
-  planOptions: {
-    gap: 8,
-    marginBottom: 8,
-    maxWidth: 480,
+  headerPlanSelector: {
+    minWidth: 145,
+    position: "relative",
+    zIndex: 50,
   },
-  planOptionsTitle: {
-    color: "#657264",
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 1.1,
-    width: "100%",
-  },
-  planDropdownButton: {
+  headerPlanButton: {
     alignItems: "center",
     backgroundColor: "#FFFFFF",
-    borderColor: "#DCE1D9",
+    borderColor: "#CBD5C8",
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: "row",
+    gap: 7,
     justifyContent: "space-between",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
   },
-  planDropdownText: {
-    flex: 1,
+  headerPlanMenu: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#CBD5C8",
+    borderRadius: 8,
+    borderWidth: 1,
+    minWidth: 210,
+    overflow: "hidden",
+    position: "absolute",
+    right: 0,
+    top: 38,
+    zIndex: 100,
+  },
+  planItemRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+  },
+  commentaryIndicator: {
+    color: "#7B847E",
+    fontSize: 9,
+    fontWeight: "800",
+  },
+  commentaryIndicatorReady: {
+    color: "#4F7A11",
+    fontSize: 13,
   },
   planDropdownChevron: {
     color: "#657264",
     fontSize: 9,
     marginLeft: 12,
-  },
-  planDropdownMenu: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#DCE1D9",
-    borderRadius: 8,
-    borderWidth: 1,
-    overflow: "hidden",
   },
   planDropdownItem: {
     borderBottomColor: "#E8ECE5",
@@ -1405,11 +1618,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "800",
   },
-  planOptionReason: {
-    color: "#69736C",
-    fontSize: 9,
-    marginTop: 2,
-  },
   planSummary: {
     backgroundColor: "#F4F7EF",
     borderColor: "#DDE5D3",
@@ -1418,6 +1626,8 @@ const styles = StyleSheet.create({
     gap: 7,
     marginBottom: 8,
     padding: 8,
+    position: "relative",
+    zIndex: 1,
   },
   planSummaryHeader: {
     alignItems: "center",
@@ -1503,12 +1713,57 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
   },
+  selectedPlayerEditor: {
+    alignItems: "center",
+    backgroundColor: "#F5F7F2",
+    borderColor: "#DCE3D7",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  selectedPlayerEditorHeading: {
+    minWidth: 100,
+  },
+  selectedPlayerEditorTitle: {
+    color: "#18251F",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  selectedPlayerEditorMeta: {
+    color: "#657264",
+    fontSize: 10,
+    marginTop: 2,
+  },
+  playerNameInput: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#CBD5C8",
+    borderRadius: 8,
+    borderWidth: 1,
+    color: "#18251F",
+    flexGrow: 1,
+    fontSize: 12,
+    maxWidth: 260,
+    minWidth: 150,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  selectedPlayerEditorHint: {
+    color: "#778079",
+    flexShrink: 1,
+    fontSize: 10,
+  },
   fieldFrame: {
     backgroundColor: "#143B29",
     borderRadius: 14,
     flex: 1,
     minHeight: 410,
     padding: 4,
+    position: "relative",
+    zIndex: 0,
   },
   fieldFrameWide: {
     minHeight: 0,

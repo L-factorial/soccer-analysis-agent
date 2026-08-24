@@ -5,6 +5,7 @@ import {
   PanResponder,
   StyleSheet,
   Text,
+  View,
 } from "react-native";
 
 import {
@@ -92,6 +93,18 @@ export function PlayerMarker({
         },
       ]}
     >
+      {!!player.profileName?.trim() && (
+        <View
+          style={[
+            styles.playerNameContainer,
+            screenPosition.y < 0.06 && styles.playerNameContainerBelow,
+          ]}
+        >
+          <Text numberOfLines={1} style={styles.playerName}>
+            {player.profileName.trim()}
+          </Text>
+        </View>
+      )}
       <Animated.View
         style={[styles.arrowLayer, { transform: [{ rotate: `${screenOrientation}deg` }] }]}
       >
@@ -142,6 +155,28 @@ const styles = StyleSheet.create({
   },
   markerContainerSelected: {
     zIndex: 8,
+  },
+  playerNameContainer: {
+    alignItems: "center",
+    left: -220,
+    pointerEvents: "none",
+    position: "absolute",
+    right: -220,
+    top: -22,
+    zIndex: 10,
+  },
+  playerNameContainerBelow: {
+    top: 34,
+  },
+  playerName: {
+    backgroundColor: "rgba(15, 35, 26, 0.82)",
+    borderRadius: 4,
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "700",
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    textAlign: "center",
   },
   markerSelected: {
     borderColor: "#14251D",

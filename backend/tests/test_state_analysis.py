@@ -24,6 +24,8 @@ class AnalyzedGameStateTests(unittest.TestCase):
                 "DynamicSpace-team1-1",
                 "DynamicSpace-team1-2",
                 "DynamicSpace-team1-3",
+                "DynamicSpace-team1-4",
+                "DynamicSpace-team1-5",
                 "GoalSpace-team1",
                 "OpenSpace1",
                 "OpenSpace2",

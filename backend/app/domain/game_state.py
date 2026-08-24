@@ -36,8 +36,9 @@ class PlayerSpeedCategory(StrEnum):
     def multiplier(self) -> float:
         return {
             PlayerSpeedCategory.BASELINE: 1.0,
-            PlayerSpeedCategory.FAST: 1.15,
-            PlayerSpeedCategory.SUPER_FAST: 1.20,
+            PlayerSpeedCategory.FAST: 1.20,
+            # SUPER_FAST is 30% above FAST: 1.20 * 1.30 = 1.56.
+            PlayerSpeedCategory.SUPER_FAST: 1.56,
         }[self]
 
 
@@ -97,6 +98,8 @@ class PlayerState:
     orientation: float
     velocity: Vector2
     speed_category: PlayerSpeedCategory = PlayerSpeedCategory.BASELINE
+    # Optional coach-facing label; `name` remains the stable internal name.
+    profile_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

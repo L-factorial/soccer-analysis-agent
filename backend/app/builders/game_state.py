@@ -104,6 +104,7 @@ def build_initial_game_state(submission: FieldSubmission) -> GameState:
             orientation=player.orientation,
             velocity=_vector(player.velocity),
             speed_category=PlayerSpeedCategory(player.speed_category),
+            profile_name=player.profile_name,
         )
         player_ids_by_team[player.team_id].append(player.id)
 

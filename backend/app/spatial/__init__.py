@@ -33,6 +33,7 @@ from app.spatial.segments import (
     segment_length,
 )
 from app.spatial.vector import (
+    ACCOUNT_FOR_TURN_DURATION,
     EPSILON,
     add,
     almost_equal,
@@ -45,11 +46,13 @@ from app.spatial.vector import (
     orientation_degrees,
     scale,
     subtract,
+    turn_duration_seconds,
 )
 from app.spatial.zones import contains_point, distance_to_zone, nearest_point_in_zone
 
 __all__ = [
     "EPSILON",
+    "ACCOUNT_FOR_TURN_DURATION",
     "GeometryError",
     "InvalidDurationError",
     "InvalidSpeedError",
@@ -92,4 +95,5 @@ __all__ = [
     "subtract",
     "teammates",
     "travel_time",
+    "turn_duration_seconds",
 ]

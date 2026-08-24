@@ -6,6 +6,7 @@ from unittest.mock import patch
 from app.builders import build_initial_game_state
 from app.builders import build_phase_animation_response, build_phase_planner_diagnostics
 from app.models.field_submission import FieldSubmission
+from app.models.animation_response import MoveEvent, Position
 from app.domain import Vector2
 from app.phases import (
     DefensiveIntention,
@@ -22,6 +23,8 @@ from app.phases import (
 )
 from app.planning import analyze_game_state
 from app.spatial import distance
+from app.phases.templates import PhaseGenerationPolicy, _hold_shape_target
+from app.builders.phase_animation_response import _merge_continuous_dribbles
 from app.validation import validate_field_submission
 from test_action_candidates import player
 from test_field_submission_validation import valid_payload
@@ -89,7 +92,286 @@ def phase_state(
     return analyze_game_state(build_initial_game_state(submission))
 
 
+def defensive_cover_state():
+    """Recreate the moment before defender #2 was pulled away by a decoy."""
+    payload = valid_payload()
+    field = payload["fieldConfiguration"]
+    field["players"] = [
+        player("team1-1", "team1", 1, 1200, 4500),
+        player("team1-2", "team1", 2, 4237, 4429),
+        player("team1-3", "team1", 3, 5864, 6640),
+        player("team1-4", "team1", 4, 8059, 1500),
+        player("team1-5", "team1", 5, 5748, 5776),
+        player("team2-1", "team2", 1, 10800, 4500),
+        player("team2-2", "team2", 2, 8348, 3772),
+        player("team2-3", "team2", 3, 5838, 8141),
+        player("team2-4", "team2", 4, 8265, 1524),
+        player("team2-5", "team2", 5, 4467, 7069),
+    ]
+    field["ball"]["position"] = {"x": 5748, "y": 5776}
+    field["openSpaces"] = []
+    submission = FieldSubmission.model_validate(payload)
+    validate_field_submission(submission)
+    return analyze_game_state(build_initial_game_state(submission))
+
+
+def wide_crossing_state():
+    """Recreate #4 receiving wide before teammates should attack the box."""
+    payload = valid_payload()
+    field = payload["fieldConfiguration"]
+    field["players"] = [
+        player("team1-1", "team1", 1, 1200, 4500),
+        player("team1-2", "team1", 2, 3213, 3863),
+        player("team1-3", "team1", 3, 4429, 6997),
+        player("team1-4", "team1", 4, 7296, 422),
+        player("team1-5", "team1", 5, 5030, 2913),
+        player("team2-1", "team2", 1, 10800, 4500),
+        player("team2-2", "team2", 2, 8347, 4968),
+        player("team2-3", "team2", 3, 4729, 7560),
+        player("team2-4", "team2", 4, 7007, 3000),
+        player("team2-5", "team2", 5, 4159, 4541),
+    ]
+    field["ball"]["position"] = {"x": 7296, "y": 422}
+    field["openSpaces"] = []
+    submission = FieldSubmission.model_validate(payload)
+    validate_field_submission(submission)
+    return analyze_game_state(build_initial_game_state(submission))
+
+
+def advanced_central_dribble_state():
+    """Expose a central final-third dribble with a teammate already out wide."""
+    payload = valid_payload()
+    field = payload["fieldConfiguration"]
+    field["players"] = [
+        player("team1-1", "team1", 1, 1200, 4500),
+        player("team1-2", "team1", 2, 6900, 3300),
+        player("team1-4", "team1", 4, 6500, 5200),
+        player("team1-5", "team1", 5, 6200, 1000),
+        player("team1-7", "team1", 7, 7800, 3600),
+        player("team2-1", "team2", 1, 10800, 4500),
+        player("team2-2", "team2", 2, 9300, 5500),
+        player("team2-3", "team2", 3, 8500, 7000),
+        player("team2-4", "team2", 4, 6500, 8000),
+        player("team2-5", "team2", 5, 5000, 6000),
+    ]
+    field["ball"]["position"] = {"x": 7800, "y": 3600}
+    field["openSpaces"] = []
+    submission = FieldSubmission.model_validate(payload)
+    validate_field_submission(submission)
+    return analyze_game_state(build_initial_game_state(submission))
+
+
+def shot_roles_state():
+    """Expose a shot with enough teammates and defenders to test phase roles."""
+    payload = valid_payload()
+    field = payload["fieldConfiguration"]
+    field["players"] = [
+        player("team1-1", "team1", 1, 1200, 4500),
+        player("team1-2", "team1", 2, 6500, 2500),
+        player("team1-3", "team1", 3, 7000, 6500),
+        player("team1-4", "team1", 4, 10500, 2500),
+        player("team1-5", "team1", 5, 7500, 4500),
+        player("team2-1", "team2", 1, 10800, 4500),
+        player("team2-2", "team2", 2, 8500, 1000),
+        player("team2-3", "team2", 3, 9000, 7000),
+        player("team2-4", "team2", 4, 7000, 8000),
+        player("team2-5", "team2", 5, 7000, 500),
+    ]
+    field["ball"]["position"] = {"x": 10500, "y": 2500}
+    field["openSpaces"] = []
+    submission = FieldSubmission.model_validate(payload)
+    validate_field_submission(submission)
+    return analyze_game_state(build_initial_game_state(submission))
+
+
 class TacticalPhaseGenerationTests(unittest.TestCase):
+    def test_shot_assigns_rebounds_rest_defense_and_distinct_block_angle(self) -> None:
+        analyzed = shot_roles_state()
+        phase = next(
+            phase
+            for phase in generate_tactical_phases(
+                analyzed.game_state,
+                analyzed.action_candidates.feasible,
+            )
+            if phase.template_type == PhaseTemplateType.SHOT
+            and phase.primary_action.destination.y == 4500
+        )
+        attacking_roles = {
+            intention.player_id: intention
+            for intention in phase.attacking_intentions
+        }
+        presser = next(
+            intention
+            for intention in phase.defensive_intentions
+            if intention.intention_type
+            == DefensiveIntentionType.PRESS_BALL_CARRIER
+        )
+        blocker = next(
+            intention
+            for intention in phase.defensive_intentions
+            if intention.intention_type == DefensiveIntentionType.COVER_GOAL
+            and intention.player_id != "team2-1"
+        )
+
+        self.assertEqual(
+            attacking_roles["team1-2"].intention_type.value,
+            "HOLD_POSITION",
+        )
+        self.assertEqual(
+            {
+                intention.intention_type.value
+                for player_id, intention in attacking_roles.items()
+                if player_id != "team1-2"
+            },
+            {"FORWARD_RUN"},
+        )
+        self.assertNotEqual(blocker.target, presser.target)
+        self.assertAlmostEqual(blocker.target.x, 10990)
+        self.assertAlmostEqual(blocker.target.y, 3200)
+
+    def test_final_third_hold_shape_does_not_widen_goal_corridor_gap(self) -> None:
+        analyzed = wide_crossing_state()
+        state = analyzed.game_state
+        defender = state.players_by_id["team2-3"]
+        defended_goal = state.goals_by_id[
+            state.teams_by_id[defender.team_id].defended_goal_id
+        ]
+
+        target = _hold_shape_target(
+            state,
+            defender,
+            Vector2(9000, 1080),
+            lane_y=7500,
+            policy=PhaseGenerationPolicy(),
+        )
+
+        self.assertLess(
+            abs(target.y - defended_goal.center.y),
+            abs(defender.position.y - defended_goal.center.y),
+        )
+        self.assertLessEqual(distance(defender.position, target), 600 + 1e-6)
+
+    def test_wide_final_third_dribble_sends_two_runners_into_box(self) -> None:
+        analyzed = wide_crossing_state()
+        phases = generate_tactical_phases(
+            analyzed.game_state,
+            analyzed.action_candidates.feasible,
+        )
+        phase = next(
+            phase
+            for phase in phases
+            if phase.template_type == PhaseTemplateType.DRIBBLE_WITH_SUPPORT
+            and phase.primary_action.actor_id == "team1-4"
+            and phase.primary_action.destination.x > 8500
+        )
+        forward_runs = {
+            intention.player_id: intention.target
+            for intention in phase.attacking_intentions
+            if intention.intention_type.value == "FORWARD_RUN"
+        }
+        support = tuple(
+            intention
+            for intention in phase.attacking_intentions
+            if intention.intention_type.value == "SUPPORT_BALL"
+        )
+
+        self.assertEqual(set(forward_runs), {"team1-3", "team1-5"})
+        self.assertEqual(
+            {round(target.x) for target in forward_runs.values()},
+            {10700},
+        )
+        self.assertEqual(
+            {round(target.y) for target in forward_runs.values()},
+            {3600, 5400},
+        )
+        self.assertEqual(len(support), 1)
+        self.assertEqual(support[0].player_id, "team1-2")
+
+    def test_advanced_central_dribble_preserves_explicit_width_provider(self) -> None:
+        analyzed = advanced_central_dribble_state()
+        phase = next(
+            phase
+            for phase in generate_tactical_phases(
+                analyzed.game_state,
+                analyzed.action_candidates.feasible,
+            )
+            if phase.template_type == PhaseTemplateType.DRIBBLE_WITH_SUPPORT
+            and phase.primary_action.actor_id == "team1-7"
+            and phase.primary_action.destination.x > 8000
+            and 2250 < phase.primary_action.destination.y < 6750
+        )
+        roles = {
+            intention.player_id: intention
+            for intention in phase.attacking_intentions
+        }
+
+        # Number 5 begins in the outside lane. It must advance without being
+        # pulled toward number 7's central dribble lane.
+        self.assertEqual(roles["team1-5"].intention_type.value, "FORWARD_RUN")
+        self.assertGreater(roles["team1-5"].target.x, 6200)
+        self.assertEqual(roles["team1-5"].target.y, 1000)
+        self.assertTrue(
+            any(
+                intention.intention_type.value == "SUPPORT_BALL"
+                for intention in phase.attacking_intentions
+            )
+        )
+
+    def test_last_central_cover_defender_does_not_follow_decoy(self) -> None:
+        analyzed = defensive_cover_state()
+        phases = generate_tactical_phases(
+            analyzed.game_state,
+            analyzed.action_candidates.feasible,
+        )
+        dribble_phases = tuple(
+            phase
+            for phase in phases
+            if phase.template_type == PhaseTemplateType.DRIBBLE_WITH_SUPPORT
+            and phase.primary_action.actor_id == "team1-5"
+            and phase.primary_action.destination.x > 7000
+        )
+
+        self.assertTrue(dribble_phases)
+        self.assertTrue(
+            any(
+                intention.player_id == "team2-2"
+                and intention.intention_type
+                == DefensiveIntentionType.COVER_PASSING_LANE
+                and intention.target.x
+                >= phase.primary_action.destination.x + 400
+                for phase in dribble_phases
+                for intention in phase.defensive_intentions
+            )
+        )
+        self.assertFalse(
+            any(
+                intention.player_id == "team2-2"
+                and intention.intention_type
+                == DefensiveIntentionType.TRACK_RECEIVER
+                and intention.target_player_id == "team1-2"
+                for phase in dribble_phases
+                for intention in phase.defensive_intentions
+            )
+        )
+
+    def test_dribble_never_tracks_a_null_receiver(self) -> None:
+        analyzed = defensive_cover_state()
+        phases = generate_tactical_phases(
+            analyzed.game_state,
+            analyzed.action_candidates.feasible,
+        )
+
+        self.assertFalse(
+            any(
+                intention.intention_type
+                == DefensiveIntentionType.TRACK_RECEIVER
+                and intention.target_player_id is None
+                for phase in phases
+                if phase.template_type == PhaseTemplateType.DRIBBLE_WITH_SUPPORT
+                for intention in phase.defensive_intentions
+            )
+        )
+
     def test_fast_wide_runners_keep_their_natural_lanes(self) -> None:
         analyzed = phase_state(include_two_wide_fast_attackers=True)
         phases = generate_tactical_phases(
@@ -100,7 +382,9 @@ class TacticalPhaseGenerationTests(unittest.TestCase):
             intention.player_id: intention.target.y
             for phase in phases
             if phase.template_type == PhaseTemplateType.DRIBBLE_WITH_SUPPORT
-            and phase.primary_action.destination == Vector2(2750, 4500)
+            and phase.primary_action.source_analysis.pace.value == "REGULAR"
+            and phase.primary_action.source_analysis.dribble_direction.value
+            == "STRAIGHT"
             for intention in phase.attacking_intentions
             if intention.player_id in {"team1-6", "team1-7"}
             and intention.intention_type.value == "FORWARD_RUN"
@@ -267,7 +551,21 @@ class TacticalPhaseGenerationTests(unittest.TestCase):
             for intention in space_phase.attacking_intentions
             if intention.player_id == space_phase.primary_action.receiver_id
         )
-        self.assertEqual(receiver_intention.start_offset_seconds, 0)
+        expected_receiver_start = max(
+            0,
+            (
+                space_phase.primary_action.metrics.ball_travel_duration_seconds
+                or space_phase.primary_action.metrics.duration_seconds
+            )
+            - (
+                space_phase.primary_action.metrics.receiver_arrival_time_seconds
+                or 0
+            ),
+        )
+        self.assertAlmostEqual(
+            receiver_intention.start_offset_seconds,
+            expected_receiver_start,
+        )
         self.assertTrue(
             any(
                 intention.start_offset_seconds > 0
@@ -466,6 +764,41 @@ class OffsideRuleTests(unittest.TestCase):
 
 
 class TacticalPhaseSimulationTests(unittest.TestCase):
+    def test_rejects_shot_when_defender_reaches_path_during_release(self) -> None:
+        analyzed = shot_roles_state()
+        phase = next(
+            phase
+            for phase in generate_tactical_phases(
+                analyzed.game_state,
+                analyzed.action_candidates.feasible,
+            )
+            if phase.template_type == PhaseTemplateType.SHOT
+            and phase.primary_action.destination.y == 4500
+        )
+        blocker = next(
+            intention
+            for intention in phase.defensive_intentions
+            if intention.intention_type == DefensiveIntentionType.COVER_GOAL
+            and intention.player_id != "team2-1"
+        )
+        players = dict(analyzed.game_state.players_by_id)
+        players[blocker.player_id] = replace(
+            players[blocker.player_id],
+            position=blocker.target,
+        )
+        state = replace(
+            analyzed.game_state,
+            players_by_id=MappingProxyType(players),
+        )
+
+        result = simulate_tactical_phase(state, phase)
+
+        self.assertEqual(result.status, PhaseStatus.INTERCEPTED)
+        self.assertIn(
+            PhaseIssueCode.SHOT_BLOCKED,
+            {issue.code for issue in result.validation.issues},
+        )
+
     def test_simulates_attackers_and_two_defenders_concurrently(self) -> None:
         analyzed = phase_state()
         phase = next(
@@ -566,6 +899,72 @@ class TacticalPhaseSimulationTests(unittest.TestCase):
 
 
 class TacticalPhaseSearchTests(unittest.TestCase):
+    def test_solution_count_defaults_to_two_and_must_be_positive(self) -> None:
+        self.assertEqual(PhaseSearchPolicy().maximum_solution_count, 2)
+        with self.assertRaises(ValueError):
+            PhaseSearchPolicy(maximum_solution_count=0)
+
+    def test_dribble_space_alignment_changes_phase_score(self) -> None:
+        result = search_tactical_phases(
+            phase_state(include_shape_defender=True),
+            PhaseSearchPolicy(maximum_depth=1, beam_width=100),
+        )
+        adjustments = {
+            round(node.steps[0].score.dribble_space, 6)
+            for node in result.best_sequences
+            if node.steps[0].phase.primary_action.action_type.value
+            == "MOVE_WITH_BALL"
+        }
+
+        self.assertTrue(any(adjustment > 0 for adjustment in adjustments))
+        self.assertGreater(len(adjustments), 1)
+
+    def test_repeated_carrier_dribble_receives_sequence_penalty(self) -> None:
+        analyzed = phase_state(include_shape_defender=True)
+        result = search_tactical_phases(
+            analyzed,
+            PhaseSearchPolicy(maximum_depth=2, beam_width=50),
+        )
+        repeated = next(
+            node
+            for node in result.best_sequences
+            if len(node.steps) == 2
+            and all(
+                step.phase.primary_action.action_type.value == "MOVE_WITH_BALL"
+                for step in node.steps
+            )
+            and node.steps[0].phase.primary_action.actor_id
+            == node.steps[1].phase.primary_action.actor_id
+        )
+
+        self.assertLess(repeated.steps[1].score.sequence_adjustment, 0)
+
+    def test_scheduler_merges_uninterrupted_dribble_primitives(self) -> None:
+        events = (
+            MoveEvent(
+                id="action1",
+                type="MOVE_WITH_BALL",
+                player_id="team1-7",
+                start_time=1,
+                duration=1.5,
+                target=Position(x=6000, y=3000),
+            ),
+            MoveEvent(
+                id="action2",
+                type="MOVE_WITH_BALL",
+                player_id="team1-7",
+                start_time=2.5,
+                duration=1.5,
+                target=Position(x=6750, y=3000),
+            ),
+        )
+
+        merged = _merge_continuous_dribbles(events)
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0].duration, 3)
+        self.assertEqual(merged[0].target, Position(x=6750, y=3000))
+
     def test_coordinated_runs_fill_remaining_phase_without_idle_gap(self) -> None:
         analyzed = phase_state(include_shape_defender=True)
         result = search_tactical_phases(
@@ -583,8 +982,16 @@ class TacticalPhaseSearchTests(unittest.TestCase):
             build_phase_planner_diagnostics(result, sequence),
         )
         runs = tuple(event for event in response.events if event.type == "RUN")
+        pass_event = next(
+            event for event in response.events if event.type == "PASS_TO_SPACE"
+        )
 
         self.assertTrue(runs)
+        self.assertTrue(all(event.pace is not None for event in runs))
+        self.assertTrue(all(event.speed_cm_per_second >= 0 for event in runs))
+        self.assertIn(pass_event.pass_category, {"SHORT", "MODERATE", "LONG"})
+        self.assertGreater(pass_event.ball_speed_cm_per_second, 0)
+        self.assertAlmostEqual(pass_event.receive_time, response.duration)
         self.assertTrue(
             all(
                 abs(event.start_time + event.duration - response.duration)
@@ -655,6 +1062,15 @@ class TacticalPhaseSearchTests(unittest.TestCase):
         payload = response.model_dump(by_alias=True)
         self.assertEqual(payload["diagnostics"]["plannerType"], "TACTICAL_PHASE")
         self.assertEqual(payload["diagnostics"]["phaseCount"], 1)
+        # Standard playback receives the spaces at time zero and again after
+        # every selected phase, allowing the UI overlay to follow simulation.
+        self.assertEqual(len(payload["phaseSnapshots"]), 2)
+        self.assertEqual(payload["phaseSnapshots"][0]["atTime"], 0)
+        self.assertEqual(
+            payload["phaseSnapshots"][-1]["atTime"],
+            response.duration,
+        )
+        self.assertTrue(payload["phaseSnapshots"][0]["openSpaces"])
         selected_phase = payload["diagnostics"]["selectedPhases"][0]
         self.assertEqual(selected_phase["phaseType"], "SHOT")
         self.assertEqual(selected_phase["actionType"], "SHOT")
