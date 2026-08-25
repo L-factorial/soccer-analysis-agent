@@ -73,7 +73,7 @@ parts of the same algorithm:
 | State analyzer | Recomputes possession, pressure, open spaces, passes, dribbles, shots, and feasible candidates for each state. | [`planning/state_analysis.py`](app/planning/state_analysis.py) |
 | Phase generator | Combines one primary ball action with simultaneous attacking and defensive off-ball intentions. | [`phases/templates.py`](app/phases/templates.py) |
 | Phase simulator | Applies a generated phase to immutable state and checks physical timing, tackles, blocks, interceptions, and possession. | [`phases/simulation.py`](app/phases/simulation.py) |
-| Phase scorer | Produces an explainable additive reward/penalty breakdown for a valid simulated phase. | [`phases/scoring.py`](app/phases/scoring.py) |
+| Phase scorer | Centralizes every tactical scoring scenario as a named, commented function, then assembles their results into an explainable additive breakdown for each valid simulated phase. | [`phases/scoring.py`](app/phases/scoring.py) |
 | Beam-search adapter | Expands phase nodes, applies soccer validation/scoring, reanalyzes child states, and collects diagnostics. | [`phases/search.py`](app/phases/search.py) |
 | Generic beam search | Performs deterministic frontier ranking, duplicate-state pruning, width pruning, and retained-node limiting. It contains no soccer rules. | [`planning/beam.py`](app/planning/beam.py) |
 | Solution selector | Keeps goal-scoring routes and rejects visually duplicate alternatives. | [`game_engine/solutions.py`](app/game_engine/solutions.py) |

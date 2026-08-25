@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from app.analysis import ActionType
-from app.domain import PossessionStatus, TargetZoneSource, is_goalkeeper
+from app.domain import PlayerState, PossessionStatus, TargetZoneSource, is_goalkeeper
 from app.spatial import distance, distance_to_goal
 from app.phases.models import PhaseSimulationResult, TacticalPhase
 
@@ -236,63 +236,127 @@ def _dribble_space_score(
     return 0
 
 
-def score_phase_result(
+def _forward_progress_score(
     simulation: PhaseSimulationResult,
-    policy: PhaseScoringPolicy = PhaseScoringPolicy(),
-) -> PhaseScore:
-    """Score a completed simulation without changing its resulting state."""
-    phase = simulation.phase
-    state = simulation.resulting_state
-    action = phase.primary_action
-    field_length = state.field.length
-    forward = max(-1, min(1, action.metrics.forward_progress_cm / field_length))
-    proximity = max(
+    policy: PhaseScoringPolicy,
+) -> float:
+    """Reward movement in the attacking direction, capped to one field length."""
+    action = simulation.phase.primary_action
+    field_length = simulation.resulting_state.field.length
+    progress_ratio = max(
+        -1,
+        min(1, action.metrics.forward_progress_cm / field_length),
+    )
+    return progress_ratio * policy.forward_progress_weight
+
+
+def _goal_proximity_score(
+    simulation: PhaseSimulationResult,
+    policy: PhaseScoringPolicy,
+) -> float:
+    """Reward improvement in goal distance, capped to one field length."""
+    action = simulation.phase.primary_action
+    field_length = simulation.resulting_state.field.length
+    proximity_ratio = max(
         -1,
         min(1, action.metrics.goal_proximity_improvement_cm / field_length),
     )
-    possession = state.possession
-    retains = (
+    return proximity_ratio * policy.goal_proximity_weight
+
+
+def _possession_score(
+    simulation: PhaseSimulationResult,
+    policy: PhaseScoringPolicy,
+) -> float:
+    """Reward retained attacking control and penalize every other outcome."""
+    possession = simulation.resulting_state.possession
+    retains_control = (
         possession.status == PossessionStatus.CONTROLLED
-        and possession.team_id == phase.attacking_team_id
+        and possession.team_id == simulation.phase.attacking_team_id
     )
-    coordination_count = len(phase.attacking_intentions) + len(phase.defensive_intentions)
+    return policy.possession_weight if retains_control else -policy.possession_weight
+
+
+def _assigned_intentions_score(
+    simulation: PhaseSimulationResult,
+    policy: PhaseScoringPolicy,
+) -> float:
+    """Reward phases that coordinate up to four attacking/defensive intentions."""
+    phase = simulation.phase
+    coordination_count = len(phase.attacking_intentions) + len(
+        phase.defensive_intentions
+    )
+    return min(1, coordination_count / 4) * policy.coordination_weight
+
+
+def _support_quality_score(
+    simulation: PhaseSimulationResult,
+    policy: PhaseScoringPolicy,
+) -> float:
+    """Reward the best non-receiver support lane for clearance and separation."""
+    phase = simulation.phase
+    state = simulation.resulting_state
     defenders = tuple(
         player
         for player in state.players_by_id.values()
         if player.team_id != phase.attacking_team_id
     )
-    support_quality = 0.0
+    best_support_quality = 0.0
     for intention in phase.attacking_intentions:
-        if intention.player_id == action.receiver_id:
+        if intention.player_id == phase.primary_action.receiver_id:
             continue
         support_position = state.players_by_id[intention.player_id].position
         clearance = min(
             (distance(support_position, defender.position) for defender in defenders),
             default=1500,
         )
-        lateral_separation = abs(support_position.y - action.destination.y)
-        support_quality = max(
-            support_quality,
+        lateral_separation = abs(
+            support_position.y - phase.primary_action.destination.y
+        )
+        best_support_quality = max(
+            best_support_quality,
             0.6 * min(1, clearance / 1500)
             + 0.4 * min(1, lateral_separation / 1200),
         )
-    attackers = tuple(
+    return best_support_quality * policy.coordination_weight
+
+
+def _outfield_attackers(
+    simulation: PhaseSimulationResult,
+) -> tuple[PlayerState, ...]:
+    """Return attacking outfield players used by width and spacing scenarios."""
+    phase = simulation.phase
+    return tuple(
         player
-        for player in state.players_by_id.values()
+        for player in simulation.resulting_state.players_by_id.values()
         if player.team_id == phase.attacking_team_id and not is_goalkeeper(player)
     )
-    attacking_width = (
-        (
-            max(player.position.y for player in attackers)
-            - min(player.position.y for player in attackers)
-        )
-        / state.field.width
-        if len(attackers) > 1
-        else 0
+
+
+def _attacking_width_score(
+    simulation: PhaseSimulationResult,
+    policy: PhaseScoringPolicy,
+) -> float:
+    """Reward the fraction of field width occupied by attacking outfielders."""
+    attackers = _outfield_attackers(simulation)
+    if len(attackers) <= 1:
+        return 0
+    width = max(player.position.y for player in attackers) - min(
+        player.position.y for player in attackers
     )
-    # Closely clustered attackers offer the carrier the same passing picture.
-    # Penalizing pairwise convergence makes distinct support lanes competitive
-    # during beam ranking without turning spacing into a validity constraint.
+    return (
+        width
+        / simulation.resulting_state.field.width
+        * policy.attacking_width_weight
+    )
+
+
+def _close_spacing_penalty(
+    simulation: PhaseSimulationResult,
+    policy: PhaseScoringPolicy,
+) -> float:
+    """Penalize pairs of attackers that finish without distinct passing lanes."""
+    attackers = _outfield_attackers(simulation)
     close_pairs = sum(
         1
         for index, player in enumerate(attackers)
@@ -300,7 +364,52 @@ def score_phase_result(
         if distance(player.position, teammate.position)
         < policy.minimum_attacking_spacing_cm
     )
-    scored = state.scoring_team_id == phase.attacking_team_id
+    return -close_pairs * policy.close_spacing_penalty_weight
+
+
+def _coordination_score(
+    simulation: PhaseSimulationResult,
+    policy: PhaseScoringPolicy,
+) -> float:
+    """Combine intention, support-lane, width, and close-spacing scenarios."""
+    return (
+        _assigned_intentions_score(simulation, policy)
+        + _support_quality_score(simulation, policy)
+        + _attacking_width_score(simulation, policy)
+        + _close_spacing_penalty(simulation, policy)
+    )
+
+
+def _duration_penalty(
+    simulation: PhaseSimulationResult,
+    policy: PhaseScoringPolicy,
+) -> float:
+    """Penalize elapsed phase time, with the penalty capped at 12 seconds."""
+    return -policy.duration_penalty_weight * min(
+        1,
+        simulation.phase.duration_seconds / 12,
+    )
+
+
+def _goal_score(
+    simulation: PhaseSimulationResult,
+    policy: PhaseScoringPolicy,
+) -> float:
+    """Apply the terminal reward only when the attacking team scored."""
+    scored = (
+        simulation.resulting_state.scoring_team_id
+        == simulation.phase.attacking_team_id
+    )
+    return policy.goal_reward if scored else 0
+
+
+def _tactical_preference_score(
+    simulation: PhaseSimulationResult,
+    policy: PhaseScoringPolicy,
+) -> float:
+    """Reward configured action, player, space, and off-ball preferences."""
+    phase = simulation.phase
+    action = phase.primary_action
     preference_checks: list[bool] = []
     if policy.preferred_action_types:
         preference_checks.append(action.action_type.value in policy.preferred_action_types)
@@ -310,42 +419,46 @@ def score_phase_result(
             action.receiver_id,
             *(intention.player_id for intention in phase.attacking_intentions),
         }
-        preference_checks.append(bool(involved_players.intersection(policy.preferred_player_ids)))
-    targets_preferred_space = (
-        bool(policy.preferred_space_ids)
-        and action.target_zone_id in policy.preferred_space_ids
-    )
+        preference_checks.append(
+            bool(involved_players.intersection(policy.preferred_player_ids))
+        )
     if policy.preferred_off_ball_intentions:
         intention_types = {
-            intention.intention_type.value
-            for intention in phase.attacking_intentions
+            intention.intention_type.value for intention in phase.attacking_intentions
         }
         preference_checks.append(
             bool(intention_types.intersection(policy.preferred_off_ball_intentions))
         )
-    tactical_preference = (
+
+    score = (
         sum(preference_checks) / len(preference_checks)
         * policy.tactical_preference_weight
-        if preference_checks else 0
+        if preference_checks
+        else 0
     )
-    if targets_preferred_space:
-        tactical_preference += policy.preferred_space_weight
+    if (
+        policy.preferred_space_ids
+        and action.target_zone_id in policy.preferred_space_ids
+    ):
+        score += policy.preferred_space_weight
+    return score
+
+
+def score_phase_result(
+    simulation: PhaseSimulationResult,
+    policy: PhaseScoringPolicy = PhaseScoringPolicy(),
+) -> PhaseScore:
+    """Assemble the independently calculated scenarios into one phase score."""
+    phase = simulation.phase
     return PhaseScore(
         phase=phase,
         simulation=simulation,
-        forward_progress=forward * policy.forward_progress_weight,
-        goal_proximity=proximity * policy.goal_proximity_weight,
-        possession=policy.possession_weight if retains else -policy.possession_weight,
-        coordination=(
-            min(1, coordination_count / 4) * policy.coordination_weight
-            + support_quality * policy.coordination_weight
-            + attacking_width * policy.attacking_width_weight
-            - close_pairs * policy.close_spacing_penalty_weight
-        ),
-        duration_penalty=-policy.duration_penalty_weight * min(
-            1, phase.duration_seconds / 12
-        ),
-        goal=policy.goal_reward if scored else 0,
-        tactical_preference=tactical_preference,
+        forward_progress=_forward_progress_score(simulation, policy),
+        goal_proximity=_goal_proximity_score(simulation, policy),
+        possession=_possession_score(simulation, policy),
+        coordination=_coordination_score(simulation, policy),
+        duration_penalty=_duration_penalty(simulation, policy),
+        goal=_goal_score(simulation, policy),
+        tactical_preference=_tactical_preference_score(simulation, policy),
         dribble_space=_dribble_space_score(simulation, policy),
     )
