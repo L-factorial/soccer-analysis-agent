@@ -15,6 +15,9 @@
 - [Game-engine code guide](backend/app/game_engine/README.md) — the separated
   deterministic engine boundary, open-space algorithm, package ownership, and
   direct links to implementation files.
+- [RAG ingestion and query API](backend/app/rag/API.md) — embedding-provider
+  boundary, ingestion and Qdrant persistence, query retrieval, response
+  contracts, proximity scoring, configuration, and errors.
 
 The project is a monorepo containing an Expo/React Native frontend and a FastAPI
 backend.

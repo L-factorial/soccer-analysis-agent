@@ -1,0 +1,32 @@
+id: tactic.overlap
+canonical_term: OVERLAP
+display_name: Overlapping run
+category: tactical_movement
+definition: >-
+  A supporting player runs outside the wide ball carrier to create a passing
+  option, stretch the defending team, or receive the ball in a wide area.
+language: en
+locale: en-GB
+aliases:
+  - term: overlapping run
+    language: en
+  - term: overlapping fullback
+    language: en
+  - term: run around the outside
+    language: en
+    locale: en-GB
+examples:
+  - Have the fullback overlap the winger.
+  - Send the supporting player around the outside of the ball carrier.
+related_concept_ids:
+  - concept.width
+  - tactic.wide_overload
+tags:
+  - attacking
+  - off-ball-movement
+  - wide-play
+source:
+  title: Internal tactical glossary
+  reference: glossary-v1
+  license: internal
+version: 1

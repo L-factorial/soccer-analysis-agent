@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import field_configurations_router
+from app.api import field_configurations_router, rag_ingestion_router, rag_query_router
 
 app = FastAPI(title="Soccer Analysis Agent API")
 
@@ -19,6 +19,8 @@ app.add_middleware(
 )
 
 app.include_router(field_configurations_router, prefix="/api/v1")
+app.include_router(rag_ingestion_router, prefix="/api/v1")
+app.include_router(rag_query_router, prefix="/api/v1")
 
 
 @app.get("/health")

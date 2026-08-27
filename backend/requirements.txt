@@ -1,4 +1,6 @@
 fastapi
 openai
 pydantic
+PyYAML
+qdrant-client
 uvicorn
