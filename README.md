@@ -45,7 +45,7 @@ Run the frontend directly in a web browser:
 npm run web
 ```
 
-For production web hosting, see [frontend deployment on Vercel](deploy/frontend.md).
+For production web hosting, see [frontend deployment on GitHub Pages](deploy/frontend.md).
 
 From the Expo development server, you can also choose an iOS simulator or an
 Android emulator when those development tools are installed.
