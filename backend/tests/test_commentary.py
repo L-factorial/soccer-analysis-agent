@@ -2,7 +2,10 @@ import os
 import unittest
 from unittest.mock import Mock, patch
 
-from app.api.field_configurations import CommentaryRequest
+from fastapi import HTTPException
+from pydantic import ValidationError
+
+from app.api.field_configurations import CommentaryRequest, create_commentary
 from app.commentary.models import (
     CommentarySimulationInput,
     GeneratedCommentary,
@@ -63,6 +66,28 @@ def _commentary_input() -> CommentarySimulationInput:
 class CommentaryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.submission = FieldSubmission.model_validate(valid_payload())
+
+    @patch("app.api.field_configurations.generate_commentary")
+    def test_endpoint_requires_explicit_opt_in(self, generate: Mock) -> None:
+        payload = {
+            "fieldSubmission": valid_payload(),
+            "animationResponse": _response().model_dump(by_alias=True),
+        }
+        for option in ({}, {"commentaryEnabled": False}):
+            with self.subTest(option=option):
+                request = CommentaryRequest.model_validate({**payload, **option})
+                with self.assertRaises(HTTPException) as caught:
+                    create_commentary(request)
+                self.assertEqual(caught.exception.status_code, 400)
+                self.assertEqual(caught.exception.detail["code"], "commentary_not_enabled")
+        generate.assert_not_called()
+
+        with self.assertRaises(ValidationError):
+            CommentaryRequest.model_validate({**payload, "commentaryEnabled": "true"})
+
+        request = CommentaryRequest.model_validate({**payload, "commentaryEnabled": True})
+        self.assertIs(create_commentary(request), generate.return_value)
+        generate.assert_called_once_with(request.animation_response, request.field_submission)
 
     @patch.dict(os.environ, {"SOCCER_COMMENTARY_ENABLED": "false"}, clear=False)
     def test_disabled_commentary_returns_original_response(self) -> None:

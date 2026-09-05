@@ -3,9 +3,11 @@ import {
   Animated,
   GestureResponderEvent,
   PanResponder,
+  Platform,
   StyleSheet,
   Text,
   View,
+  ViewStyle,
 } from "react-native";
 
 import {
@@ -23,6 +25,11 @@ type PlayerMarkerProps = {
   onSelect?: (id: string) => void;
   selected?: boolean;
 };
+
+const domedFinish = Platform.OS === "web" ? ({
+  backgroundImage: "radial-gradient(circle at 32% 22%, rgba(255,255,255,0.65), transparent 45%), linear-gradient(155deg, transparent 35%, rgba(0,0,0,0.42) 100%)",
+  boxShadow: "inset 0 1px 1px rgba(255,255,255,0.8), inset 0 -3px 2px rgba(0,0,0,0.25), 0 3px 0 #172B22, 2px 6px 5px rgba(0,0,0,0.4)",
+} as ViewStyle) : undefined;
 
 export function PlayerMarker({
   orientation,
@@ -88,6 +95,7 @@ export function PlayerMarker({
         },
       ]}
     >
+      <View style={styles.groundShadow} />
       {!!player.profileName?.trim() && (
         <View
           style={[
@@ -107,11 +115,13 @@ export function PlayerMarker({
         style={[
           styles.marker,
           { backgroundColor: team.color },
+          domedFinish,
           selected && styles.markerSelected,
           player.speedCategory === "FAST" && styles.markerFast,
           player.speedCategory === "SUPER_FAST" && styles.markerSuperFast,
         ]}
       >
+        <View style={styles.highlight} />
         <Text style={styles.label}>{player.number}</Text>
       </Animated.View>
     </Animated.View>
@@ -133,17 +143,40 @@ const styles = StyleSheet.create({
   },
   marker: {
     alignItems: "center",
-    borderColor: "#FFFFFF",
-    borderRadius: 10,
+    borderColor: "rgba(255,255,255,0.85)",
+    borderRadius: 14,
     borderWidth: 1,
     cursor: "pointer",
-    height: 20,
+    height: 26,
     justifyContent: "center",
-    width: 20,
+    width: 26,
+    elevation: 5,
     zIndex: 2,
   },
   markerContainerSelected: {
     zIndex: 8,
+  },
+  groundShadow: {
+    position: "absolute",
+    pointerEvents: "none",
+    backgroundColor: "rgba(6, 23, 13, 0.3)",
+    width: 30,
+    height: 14,
+    borderRadius: 15,
+    top: 20,
+    left: 3,
+    transform: [{ rotate: "-15deg" }],
+  },
+  highlight: {
+    position: "absolute",
+    pointerEvents: "none",
+    top: 2,
+    left: 4,
+    width: 12,
+    height: 5,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.24)",
+    transform: [{ rotate: "-20deg" }],
   },
   playerNameContainer: {
     alignItems: "center",
@@ -168,7 +201,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   markerSelected: {
-    borderColor: "#14251D",
+    borderColor: "#F3FFD1",
     borderWidth: 2,
   },
   markerFast: {
@@ -181,14 +214,14 @@ const styles = StyleSheet.create({
   },
   superFastOuterRing: {
     borderColor: "#14251D",
-    borderRadius: 14,
+    borderRadius: 17,
     borderWidth: 2,
-    height: 26,
-    left: 1,
+    height: 32,
+    left: -2,
     pointerEvents: "none",
     position: "absolute",
-    top: 1,
-    width: 26,
+    top: -2,
+    width: 32,
     zIndex: 1,
   },
   arrowLayer: {
@@ -223,7 +256,13 @@ const styles = StyleSheet.create({
   },
   label: {
     color: "#152219",
-    fontSize: 10,
-    fontWeight: "800",
+    fontSize: 11,
+    fontWeight: "900",
+    backgroundColor: "rgba(255,255,255,0.78)",
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    lineHeight: 16,
+    textAlign: "center",
   },
 });

@@ -33,15 +33,20 @@ export class FieldAnalysisError extends Error {
 export async function generateCommentary(
   configuration: FieldConfiguration,
   animationResponse: AnimationResponse,
+  commentaryEnabled: boolean,
   tacticalInstruction?: string,
   signal?: AbortSignal,
 ): Promise<CommentaryTrack> {
+  if (!commentaryEnabled) {
+    throw new Error("Enable commentary before requesting generation.");
+  }
   const response = await fetch(
     `${API_BASE_URL}/api/v1/field-configurations/commentary`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        commentaryEnabled,
         fieldSubmission: createFieldSubmission(configuration, tacticalInstruction),
         // Never send an earlier commentary track back to the model.
         animationResponse: { ...animationResponse, commentary: undefined },

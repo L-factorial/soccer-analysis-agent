@@ -2,8 +2,10 @@ import { forwardRef, ReactNode } from "react";
 import {
   GestureResponderEvent,
   LayoutChangeEvent,
+  Platform,
   StyleSheet,
   View,
+  ViewStyle,
 } from "react-native";
 
 import {
@@ -29,6 +31,12 @@ const lengthPercent = (centimeters: number) =>
   `${(centimeters / FIELD_LENGTH_CM) * 100}%` as const;
 const widthPercent = (centimeters: number) =>
   `${(centimeters / FIELD_WIDTH_CM) * 100}%` as const;
+
+// CSS grass grain is decorative; the native surface retains the mowing bands.
+const grassTexture = Platform.OS === "web" ? ({
+  backgroundImage: "radial-gradient(ellipse at 45% 35%, rgba(177,211,103,0.16), transparent 65%), repeating-linear-gradient(83deg, transparent 0px, rgba(8,43,20,0.13) 1px, transparent 2px, transparent 5px), repeating-linear-gradient(7deg, transparent 0px, rgba(204,229,137,0.08) 1px, transparent 2px, transparent 4px)",
+  boxShadow: "inset 0 0 65px rgba(4,25,14,0.35)",
+} as ViewStyle) : undefined;
 
 export const FieldSurface = forwardRef<View, FieldSurfaceProps>(
   function FieldSurface({ children, onLayout, onPress, orientation }, ref) {
@@ -79,6 +87,21 @@ export const FieldSurface = forwardRef<View, FieldSurfaceProps>(
           horizontal ? styles.horizontalSurface : styles.verticalSurface,
         ]}
       >
+        <View style={[StyleSheet.absoluteFill, styles.nonInteractive]}>
+          {Array.from({ length: 12 }, (_, index) => (
+            <View
+              key={index}
+              style={[
+                styles.mowingBand,
+                { backgroundColor: index % 2 ? "#367C40" : "#2E7038" },
+                horizontal
+                  ? { left: `${index * 100 / 12}%`, width: `${100 / 12}%`, top: 0, bottom: 0 }
+                  : { top: `${index * 100 / 12}%`, height: `${100 / 12}%`, left: 0, right: 0 },
+              ]}
+            />
+          ))}
+          <View style={[StyleSheet.absoluteFill, grassTexture]} />
+        </View>
         <View
           style={[
             styles.halfwayLine,
@@ -148,10 +171,10 @@ const styles = StyleSheet.create({
   },
   surface: {
     alignItems: "center",
-    backgroundColor: "#1E6944",
-    borderColor: "rgba(255, 255, 255, 0.72)",
-    borderRadius: 9,
-    borderWidth: 1,
+    backgroundColor: "#2E7038",
+    borderColor: "rgba(248, 250, 227, 0.85)",
+    borderRadius: 3,
+    borderWidth: 2,
     cursor: "pointer",
     justifyContent: "center",
     overflow: "hidden",
@@ -159,16 +182,19 @@ const styles = StyleSheet.create({
   },
   horizontalSurface: { aspectRatio: 4 / 3, maxHeight: "100%", width: "100%" },
   verticalSurface: { aspectRatio: 3 / 4, height: "100%", maxWidth: "100%" },
-  halfwayLine: { backgroundColor: "rgba(255, 255, 255, 0.55)", position: "absolute" },
+  mowingBand: { position: "absolute" },
+  halfwayLine: { pointerEvents: "none", backgroundColor: "rgba(248, 250, 227, 0.8)", position: "absolute" },
   horizontalHalfwayLine: { bottom: 0, left: "50%", top: 0, width: 1 },
   verticalHalfwayLine: { height: 1, left: 0, right: 0, top: "50%" },
   centerCircle: {
-    borderColor: "rgba(255, 255, 255, 0.58)",
+    pointerEvents: "none",
+    borderColor: "rgba(248, 250, 227, 0.8)",
     borderRadius: 999,
-    borderWidth: 1,
+    borderWidth: 2,
     position: "absolute",
   },
   centerSpot: {
+    pointerEvents: "none",
     backgroundColor: "rgba(255, 255, 255, 0.8)",
     borderRadius: 3,
     height: 5,
@@ -176,8 +202,8 @@ const styles = StyleSheet.create({
     width: 5,
   },
   markingBox: {
-    borderColor: "rgba(255, 255, 255, 0.58)",
-    borderWidth: 1,
+    borderColor: "rgba(248, 250, 227, 0.8)",
+    borderWidth: 2,
     position: "absolute",
   },
   leftBox: { left: -1 },

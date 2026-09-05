@@ -49,6 +49,7 @@ class FieldSubmissionReceipt(BaseModel):
 
 class CommentaryRequest(BaseModel):
     """A completed simulation submitted independently for narration."""
+    commentary_enabled: bool = Field(default=False, alias="commentaryEnabled", strict=True)
     field_submission: FieldSubmission = Field(alias="fieldSubmission")
     # This is the camelCase representation previously returned to the frontend,
     # not an internal AnimationResponse reconstructed from snake_case fields.
@@ -165,6 +166,14 @@ def analyze_field_configuration(submission: FieldSubmission) -> AnimationRespons
 )
 def create_commentary(request: CommentaryRequest) -> CommentaryTrack:
     """Generate narration independently of the simulation request lifecycle."""
+    if not request.commentary_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "commentary_not_enabled",
+                "message": "Enable commentary before requesting generation",
+            },
+        )
     commentary = generate_commentary(
         request.animation_response,
         request.field_submission,

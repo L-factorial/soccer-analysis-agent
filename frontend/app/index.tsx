@@ -172,6 +172,9 @@ export default function HomeScreen() {
   const [isFormatDropdownOpen, setIsFormatDropdownOpen] = useState(false);
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>("idle");
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [commentaryEnabled, setCommentaryEnabled] = useState(false);
+  const commentaryEnabledRef = useRef(false);
+  const commentaryAbortController = useRef<AbortController | null>(null);
   const [commentaryStatuses, setCommentaryStatuses] = useState<
     Record<string, CommentaryStatus>
   >({});
@@ -268,6 +271,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     analysisAbortController.current?.abort();
+    commentaryAbortController.current?.abort();
     setAnalysisStatus("idle");
     setAnalysisError(null);
     setCommentaryStatuses({});
@@ -280,12 +284,93 @@ export default function HomeScreen() {
   }, [fieldConfiguration]);
 
   useEffect(
-    () => () => analysisAbortController.current?.abort(),
+    () => () => {
+      analysisAbortController.current?.abort();
+      commentaryAbortController.current?.abort();
+    },
     [],
   );
 
+  function startCommentary(response: AnimationResponse) {
+    commentaryAbortController.current?.abort();
+    const controller = new AbortController();
+    commentaryAbortController.current = controller;
+    const commentaryPlans = [
+      { id: "requested", response },
+      ...(response.alternativePlans ?? []).map((plan) => ({
+        id: plan.id,
+        response: alternativeResponse(plan),
+      })),
+    ];
+    setCommentaryStatuses(
+      Object.fromEntries(commentaryPlans.map(({ id, response: plan }) =>
+        [id, plan.commentary ? "ready" : "loading"],
+      )),
+    );
+    // Each selectable plan owns an independent asynchronous commentary
+    // request. One failure never blocks simulation or the other plans.
+    for (const commentaryPlan of commentaryPlans) {
+      if (commentaryPlan.response.commentary) continue;
+      void generateCommentary(
+        fieldConfiguration,
+        commentaryPlan.response,
+        true,
+        tacticalInstruction,
+        controller.signal,
+      )
+        .then((commentary) => {
+          if (controller.signal.aborted) return;
+          setPrimaryPlanResponse((current) => {
+            if (!current) return current;
+            if (commentaryPlan.id === "requested") {
+              return { ...current, commentary };
+            }
+            return {
+              ...current,
+              alternativePlans: current.alternativePlans?.map((plan) =>
+                plan.id === commentaryPlan.id ? { ...plan, commentary } : plan,
+              ),
+            };
+          });
+          if (selectedPlanIdRef.current === commentaryPlan.id) {
+            pause();
+            reset();
+            setAnimationResponse({
+              ...commentaryPlan.response,
+              commentary,
+            });
+          }
+          setCommentaryStatuses((current) => ({
+            ...current,
+            [commentaryPlan.id]: "ready",
+          }));
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) {
+            setCommentaryStatuses((current) => ({
+              ...current,
+              [commentaryPlan.id]: "unavailable",
+            }));
+          }
+        });
+    }
+  }
+
+  function toggleCommentary() {
+    const enabled = !commentaryEnabledRef.current;
+    commentaryEnabledRef.current = enabled;
+    setCommentaryEnabled(enabled);
+    if (!enabled) {
+      commentaryAbortController.current?.abort();
+      setCommentaryStatuses({});
+    } else if (primaryPlanResponse && analysisStatus === "success") {
+      startCommentary(primaryPlanResponse);
+    }
+  }
+
   async function analyzeCurrentField() {
     analysisAbortController.current?.abort();
+    commentaryAbortController.current?.abort();
     const controller = new AbortController();
     analysisAbortController.current = controller;
     pause();
@@ -308,60 +393,8 @@ export default function HomeScreen() {
         setIsPlanDropdownOpen(false);
         setIsPlanSummaryExpanded(false);
         setAnalysisStatus("success");
-        const commentaryPlans = [
-          { id: "requested", response },
-          ...(response.alternativePlans ?? []).map((plan) => ({
-            id: plan.id,
-            response: alternativeResponse(plan),
-          })),
-        ];
-        setCommentaryStatuses(
-          Object.fromEntries(commentaryPlans.map(({ id }) => [id, "loading"])),
-        );
-        // Each selectable plan owns an independent asynchronous commentary
-        // request. One failure never blocks simulation or the other plans.
-        for (const commentaryPlan of commentaryPlans) {
-          void generateCommentary(
-            fieldConfiguration,
-            commentaryPlan.response,
-            tacticalInstruction,
-            controller.signal,
-          )
-            .then((commentary) => {
-              if (controller.signal.aborted) return;
-              setPrimaryPlanResponse((current) => {
-                if (!current) return current;
-                if (commentaryPlan.id === "requested") {
-                  return { ...current, commentary };
-                }
-                return {
-                  ...current,
-                  alternativePlans: current.alternativePlans?.map((plan) =>
-                    plan.id === commentaryPlan.id ? { ...plan, commentary } : plan,
-                  ),
-                };
-              });
-              if (selectedPlanIdRef.current === commentaryPlan.id) {
-                pause();
-                reset();
-                setAnimationResponse({
-                  ...commentaryPlan.response,
-                  commentary,
-                });
-              }
-              setCommentaryStatuses((current) => ({
-                ...current,
-                [commentaryPlan.id]: "ready",
-              }));
-            })
-            .catch(() => {
-              if (!controller.signal.aborted) {
-                setCommentaryStatuses((current) => ({
-                  ...current,
-                  [commentaryPlan.id]: "unavailable",
-                }));
-              }
-            });
+        if (commentaryEnabledRef.current) {
+          startCommentary(response);
         }
       }
     } catch (error) {
@@ -821,6 +854,20 @@ export default function HomeScreen() {
                 ]}
                 value={tacticalInstruction}
               />
+              <Pressable
+                accessibilityRole="switch"
+                accessibilityLabel="Generate commentary"
+                accessibilityState={{ checked: commentaryEnabled }}
+                onPress={toggleCommentary}
+                style={[
+                  styles.commentaryToggle,
+                  commentaryEnabled && styles.commentaryToggleEnabled,
+                ]}
+              >
+                <Text style={styles.commentaryToggleText}>
+                  Commentary: {commentaryEnabled ? "On" : "Off"}
+                </Text>
+              </Pressable>
               {!isPlaybackReady ? (
                 <Pressable
                   accessibilityRole="button"
@@ -951,12 +998,12 @@ export default function HomeScreen() {
               >
                 <Text style={styles.resetButtonText}>Reset</Text>
               </Pressable>
-              <CommentaryPanel
+              {commentaryEnabled && <CommentaryPanel
                 commentary={animationResponse.commentary}
                 loading={commentaryStatuses[selectedPlanId] === "loading"}
                 playbackSeconds={playbackSeconds}
                 playbackStatus={session.status}
-              />
+              />}
                 </>
               )}
             </View>
@@ -1417,6 +1464,23 @@ const styles = StyleSheet.create({
   tacticalInstructionInputNarrow: {
     flex: 1,
     minWidth: 160,
+  },
+  commentaryToggle: {
+    borderColor: "#CBD5C8",
+    borderRadius: 8,
+    borderWidth: 1,
+    backgroundColor: "#F1F4EF",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  commentaryToggleEnabled: {
+    backgroundColor: "#EEF6D8",
+    borderColor: "#77971B",
+  },
+  commentaryToggleText: {
+    color: "#183E2B",
+    fontSize: 12,
+    fontWeight: "700",
   },
   analyzeButton: {
     backgroundColor: "#A9D22D",
