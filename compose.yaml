@@ -1,0 +1,23 @@
+name: soccer-analysis-agent
+
+services:
+  backend:
+    image: ${BACKEND_IMAGE:-soccer-analysis-backend:local}
+    build:
+      context: ./backend
+    env_file:
+      - ${SOCCER_ENV_FILE:-./backend/.env}
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -77,6 +77,22 @@ Expected response:
 {"status":"ok"}
 ```
 
+### Backend with Docker (optional)
+
+Native Python development above does not require Docker. To run the container,
+use Docker Compose from the repository root. Create `backend/.env` from
+`backend/.env.example` if it does not already exist, then run:
+
+```bash
+docker compose up --build -d --wait
+```
+
+The backend is available at `http://127.0.0.1:8000`. Stop it with
+`docker compose down`. This deployment does not configure vector database storage.
+See [container setup and GitHub image builds](deploy/README.md) for configuration
+and validation details. GitHub Actions publishes tested images on pushes to
+`main`; automatic droplet deployment will be configured separately.
+
 ## Planning behavior
 
 Planning uses the local rules engine, tactical phase simulation, scoring policy,

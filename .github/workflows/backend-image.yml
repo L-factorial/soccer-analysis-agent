@@ -1,0 +1,69 @@
+name: Backend container image
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: backend-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      BACKEND_IMAGE: soccer-analysis-backend:ci
+      SOCCER_ENV_FILE: ./backend/.env.example
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build backend image
+        run: |
+          docker build --pull --tag "$BACKEND_IMAGE" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" backend
+
+      - name: Run tests inside the image
+        run: |
+          docker run --rm --network none \
+            --mount "type=bind,source=$GITHUB_WORKSPACE/backend/tests,target=/app/tests,readonly" \
+            "$BACKEND_IMAGE" python -m unittest discover -s /app/tests
+
+      - name: Validate Compose and start backend
+        run: |
+          docker compose config --quiet
+          docker compose up --no-build --wait --wait-timeout 90
+          curl --fail --silent --show-error http://127.0.0.1:8000/health
+
+      - name: Publish tested image to GitHub Container Registry
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-backend"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker tag "$BACKEND_IMAGE" "$image:$GITHUB_SHA"
+          docker tag "$BACKEND_IMAGE" "$image:latest"
+          docker push "$image:$GITHUB_SHA"
+          docker push "$image:latest"
+
+      - name: Show container logs
+        if: failure()
+        run: docker compose logs --no-color --tail 100
+
+      - name: Clean up
+        if: always()
+        run: |
+          docker compose down
+          docker logout ghcr.io

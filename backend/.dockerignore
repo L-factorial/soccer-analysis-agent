@@ -1,0 +1,13 @@
+# Only application source, seed knowledge, and dependencies enter the build.
+**
+!Dockerfile
+!requirements.txt
+!app/
+!app/**
+!data/
+!data/soccer_knowledge/
+!data/soccer_knowledge/**
+**/__pycache__/
+**/*.py[cod]
+**/.env
+**/.env.*
