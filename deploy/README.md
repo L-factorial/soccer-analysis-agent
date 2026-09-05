@@ -71,20 +71,45 @@ matching the hosted runner; local builds use your machine's native architecture.
 Dependencies follow the existing unpinned `requirements.txt`; deployments should
 use a tested image digest rather than rebuilding it on the server.
 
-## Droplet deployment: next step
+## Automatic droplet deployment
 
-This change builds and publishes images only. It does not connect to the droplet
-or enable automatic server updates. The previous SSH/systemd deployment workflow
-has been replaced by the container workflow.
+After the image job succeeds on `main`, the deployment job connects to the
+Ubuntu droplet at `64.227.86.254` and activates the exact published image digest.
+Pull requests never deploy. The workflow serializes runs for each branch.
 
-The next step is to install Docker on the droplet, configure registry access and
-the server environment file, and add a deployment job that pulls the tested
-image and verifies health with rollback. Compose can use a published image via
-`BACKEND_IMAGE` and a server environment file via `SOCCER_ENV_FILE`.
+GitHub repository secrets:
 
-`deploy/nginx.conf` retains the proposed hostname
-`api.soccer-agent.lfactorial.com`. DNS, HTTPS, and trusted proxy settings will be
-configured during droplet setup. No changes to the droplet are made by this work.
+- `DROPLET_HOST`: droplet IP.
+- `DROPLET_SSH_PRIVATE_KEY`: dedicated CI key, restricted on the server to the
+  deployment command. It cannot open a shell or forward ports.
+- `DROPLET_SSH_KNOWN_HOSTS`: verified droplet SSH host key.
+
+The server runs `/usr/local/sbin/soccer-deploy`, installed from
+`deploy/deploy-image.sh`. The key's forced command accepts only
+`deploy sha256:<digest>` for this repository's backend image. Script updates
+require installation using an administrator's SSH key; CI cannot upload scripts.
+
+The server configuration is in `/opt/soccer-analysis-agent/compose.yaml`.
+Its `.env` selects the image, and `/etc/soccer-backend.env` holds runtime settings
+and provider keys. Nginx serves `https://api.soccer-agent.lfactorial.com` using a
+Let's Encrypt certificate with automatic renewal. Uvicorn trusts the Docker
+host gateway through `FORWARDED_ALLOW_IPS` in the server environment file; update
+that value if the Compose network is recreated with a different gateway.
+
+Deployment pulls the new image before restarting the container. It preserves
+`.env.previous`, waits for container health, and checks both local HTTP and HTTPS
+through Nginx. A startup or health failure restores the previous image and fails
+the workflow. A separate external HTTPS check detects public connectivity issues.
+There is a brief interruption during container replacement. Previous images are
+retained; do not prune the rollback image before verifying a deployment.
+
+Manual rollback as an administrator:
+
+```sh
+cd /opt/soccer-analysis-agent
+cp -p .env.previous .env
+docker compose up -d --no-build --pull never --wait
+```
 
 References: [Compose services](https://docs.docker.com/reference/compose-file/services/),
 [GitHub container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).

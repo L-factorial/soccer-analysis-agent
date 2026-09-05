@@ -91,7 +91,7 @@ The backend is available at `http://127.0.0.1:8000`. Stop it with
 `docker compose down`. This deployment does not configure vector database storage.
 See [container setup and GitHub image builds](deploy/README.md) for configuration
 and validation details. GitHub Actions publishes tested images on pushes to
-`main`; automatic droplet deployment will be configured separately.
+`main` and deploys the tested image to the droplet with health checks and rollback.
 
 ## Planning behavior
 
