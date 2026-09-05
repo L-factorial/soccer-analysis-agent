@@ -62,9 +62,9 @@ export function OffsideLineOverlay({
 
   return (
     <View
-      pointerEvents="none"
       style={[
         styles.line,
+        { pointerEvents: "none" },
         horizontal
           ? {
               borderLeftWidth: 2,

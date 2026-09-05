@@ -37,7 +37,9 @@ export function DynamicOpenSpaceOverlay({
     orientation === "horizontal" ? FIELD_WIDTH_CM : FIELD_LENGTH_CM;
 
   return (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.overlay]}>
+    <View
+      style={[StyleSheet.absoluteFill, styles.overlay, { pointerEvents: "none" }]}
+    >
       {openSpaces.map((space) => {
         const center = fieldToScreenPosition(space.center, orientation);
         const widthPercent = (space.radius * 2 * 100) / horizontalExtent;

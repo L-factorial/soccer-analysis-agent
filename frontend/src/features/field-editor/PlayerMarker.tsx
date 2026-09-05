@@ -72,11 +72,6 @@ export function PlayerMarker({
     [onMove, onSelect, player.id, translation],
   );
 
-  const screenOrientation =
-    orientation === "horizontal"
-      ? -player.orientation
-      : -(player.orientation + 90);
-
   return (
     <Animated.View
       {...panResponder.panHandlers}
@@ -105,12 +100,6 @@ export function PlayerMarker({
           </Text>
         </View>
       )}
-      <Animated.View
-        style={[styles.arrowLayer, { transform: [{ rotate: `${screenOrientation}deg` }] }]}
-      >
-        <Animated.View style={styles.arrowShaft} />
-        <Animated.View style={styles.arrowHead} />
-      </Animated.View>
       {player.speedCategory === "SUPER_FAST" && (
         <Animated.View style={styles.superFastOuterRing} />
       )}

@@ -53,9 +53,11 @@ function easedFrameStep(
     1,
     Math.max(0, (currentFrame - startFrame) / totalFrames),
   );
-  // Retaining some linear motion avoids a full stop when consecutive phase
-  // movements meet, while smoothstep supplies visible acceleration/deceleration.
-  const linearWeight = 0.35;
+  // Keep most of the motion linear so adjacent sequence events flow into one
+  // another instead of visibly braking at every phase boundary. The remaining
+  // smoothstep contribution softens starts and finishes without masking real
+  // tactical gaps encoded in the event timeline.
+  const linearWeight = 0.8;
   const eased = (progress: number) =>
     linearWeight * progress + (1 - linearWeight) * smoothStep(progress);
   const previousEased = eased(previousProgress);

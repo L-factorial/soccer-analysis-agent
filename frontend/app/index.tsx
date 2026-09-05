@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   GestureResponderEvent,
+  Modal,
   PanResponder,
   Pressable,
   SafeAreaView,
@@ -21,7 +22,6 @@ import {
 } from "../src/api/analyze-field";
 import {
   animationFrameToSeconds,
-  ManualAnimationBuilder,
   useAnimationSession,
 } from "../src/features/animation-playback";
 import {
@@ -38,8 +38,6 @@ import {
   screenToFieldPosition,
 } from "../src/models";
 
-const PRESET_MAPS = ["Balanced", "High press", "Build from back"] as const;
-type SetupMode = "Create new" | "Use preset";
 type AnalysisStatus = "idle" | "loading" | "success" | "error";
 type CommentaryStatus = "idle" | "loading" | "ready" | "unavailable";
 
@@ -170,14 +168,14 @@ export default function HomeScreen() {
     useState<AnimationResponse | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState("requested");
   const [isPlanDropdownOpen, setIsPlanDropdownOpen] = useState(false);
+  const [isPlanSummaryExpanded, setIsPlanSummaryExpanded] = useState(false);
+  const [isFormatDropdownOpen, setIsFormatDropdownOpen] = useState(false);
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>("idle");
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [commentaryStatuses, setCommentaryStatuses] = useState<
     Record<string, CommentaryStatus>
   >({});
   const [tacticalInstruction, setTacticalInstruction] = useState("");
-  const [setupMode, setSetupMode] = useState<SetupMode>("Create new");
-  const [preset, setPreset] = useState<(typeof PRESET_MAPS)[number]>("Balanced");
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [orientationPlayerId, setOrientationPlayerId] = useState<string | null>(
     null,
@@ -186,7 +184,6 @@ export default function HomeScreen() {
   const [selectedOpenSpaceId, setSelectedOpenSpaceId] = useState<string | null>(
     null,
   );
-  const [isSequenceEditorOpen, setIsSequenceEditorOpen] = useState(false);
   const fieldRef = useRef<View>(null);
   const analysisAbortController = useRef<AbortController | null>(null);
   const selectedPlanIdRef = useRef("requested");
@@ -197,6 +194,9 @@ export default function HomeScreen() {
     fieldConfiguration.teams[0];
   const selectedFieldPlayer = orientationPlayerId
     ? fieldConfiguration.players.find(({ id }) => id === orientationPlayerId)
+    : undefined;
+  const selectedFieldPlayerTeam = selectedFieldPlayer
+    ? fieldConfiguration.teams.find(({ id }) => id === selectedFieldPlayer.teamId)
     : undefined;
   const availablePlayers = Array.from(
     { length: playerCount },
@@ -276,6 +276,7 @@ export default function HomeScreen() {
     selectedPlanIdRef.current = "requested";
     setSelectedPlanId("requested");
     setIsPlanDropdownOpen(false);
+    setIsPlanSummaryExpanded(false);
   }, [fieldConfiguration]);
 
   useEffect(
@@ -305,6 +306,7 @@ export default function HomeScreen() {
         selectedPlanIdRef.current = "requested";
         setSelectedPlanId("requested");
         setIsPlanDropdownOpen(false);
+        setIsPlanSummaryExpanded(false);
         setAnalysisStatus("success");
         const commentaryPlans = [
           { id: "requested", response },
@@ -378,13 +380,7 @@ export default function HomeScreen() {
     setAnimationResponse(response);
     setSelectedPlanId(id);
     setIsPlanDropdownOpen(false);
-  }
-
-  function updateManualAnimation(response: AnimationResponse) {
-    setAnimationResponse(response);
-    setPrimaryPlanResponse(null);
-    setAnalysisError(null);
-    setAnalysisStatus(response.events.length > 0 ? "success" : "idle");
+    setIsPlanSummaryExpanded(false);
   }
 
   function changeFieldFormat(fieldType: FieldFormat) {
@@ -520,28 +516,11 @@ export default function HomeScreen() {
   }, []);
 
   const selectFieldPlayer = useCallback((id: string) => {
-    if (orientationPlayerId === id) {
-      setFieldConfiguration((current) => ({
-        ...current,
-        players: current.players.map((player) => {
-          if (player.id !== id) {
-            return player;
-          }
-          const speedCategory =
-            player.speedCategory === "BASELINE"
-              ? "FAST"
-              : player.speedCategory === "FAST"
-                ? "SUPER_FAST"
-                : "BASELINE";
-          return { ...player, speedCategory };
-        }),
-      }));
-    }
     setOrientationPlayerId(id);
     setSelectedPlayerId(null);
     setOpenSpaceTool(null);
     setSelectedOpenSpaceId(null);
-  }, [orientationPlayerId]);
+  }, []);
 
   const createOpenSpace = useCallback(
     (type: OpenSpaceType, pageX: number, pageY: number) => {
@@ -775,213 +754,60 @@ export default function HomeScreen() {
           isWide && styles.pageWide,
         ]}
       >
-        <ScrollView
-          contentContainerStyle={styles.sidebarContent}
-          nestedScrollEnabled
-          scrollEnabled={isWide}
-          showsVerticalScrollIndicator={isWide}
-          style={[styles.sidebar, isWide && styles.sidebarWide]}
-        >
-          <View style={styles.brand}>
-            <View style={styles.brandMark} />
-            <View>
-              <Text style={styles.eyebrow}>TACTICAL WORKSPACE</Text>
-              <Text style={styles.title}>Soccer Analysis Agent</Text>
-            </View>
-          </View>
-
-          <View style={styles.configuration}>
-            <View style={styles.section}>
-              <Text style={styles.sectionNumber}>01</Text>
-              <Text style={styles.sectionLabel}>Team</Text>
-              <View style={styles.choiceRow}>
-                {fieldConfiguration.teams.map((team) => (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: selectedTeamId === team.id }}
-                    key={team.id}
-                    onPress={() => setSelectedTeamId(team.id)}
-                    style={[
-                      styles.teamButton,
-                      selectedTeamId === team.id && styles.teamButtonSelected,
-                    ]}
-                  >
-                    <View style={[styles.teamSwatch, { backgroundColor: team.color }]} />
-                    <View>
-                      <Text style={styles.teamButtonText}>{team.name}</Text>
-                      <Text style={styles.teamGoalText}>
-                        {fieldConfiguration.goals.find(({ id }) => id === team.defendedGoalId)?.name}
-                      </Text>
-                    </View>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.section}>
-              <Text style={styles.sectionNumber}>02</Text>
-              <Text style={styles.sectionLabel}>Field configuration</Text>
-              <View style={styles.choiceRow}>
-                {FIELD_FORMATS.map((format) => (
-                  <ChoiceButton
-                    key={format}
-                    label={format}
-                    selected={fieldConfiguration.fieldType === format}
-                    onPress={() => changeFieldFormat(format)}
-                  />
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.section}>
-              <Text style={styles.sectionNumber}>03</Text>
-              <Text style={styles.sectionLabel}>
-                {selectedTeam.name} players
-              </Text>
-              <Text style={styles.sectionHelp}>
-                Drag to move; tap a field player to rotate
-              </Text>
-              <View style={styles.playerTray}>
-                {availablePlayers.map((player) => (
-                  <DraggablePlayer
-                    color={selectedTeam.color}
-                    id={player.id}
-                    key={player.id}
-                    number={player.number}
-                    onDrop={placePlayer}
-                    onSelect={selectPlayer}
-                    placed={fieldConfiguration.players.some(
-                      ({ id }) => id === player.id,
-                    )}
-                    selected={selectedPlayerId === player.id}
-                  />
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.section}>
-              <Text style={styles.sectionNumber}>04</Text>
-              <Text style={styles.sectionLabel}>Open spaces</Text>
-              <Text style={styles.sectionHelp}>
-                Choose a shape, then tap the field
-              </Text>
-              <View style={styles.choiceRow}>
-                <ChoiceButton
-                  label="Circle"
-                  onPress={() => selectOpenSpaceTool("circular")}
-                  selected={openSpaceTool === "circular"}
-                />
-                <ChoiceButton
-                  label="Rectangle"
-                  onPress={() => selectOpenSpaceTool("rectangular")}
-                  selected={openSpaceTool === "rectangular"}
-                />
-              </View>
-              {selectedOpenSpaceId && (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={deleteSelectedOpenSpace}
-                  style={styles.deleteButton}
-                >
-                  <Text style={styles.deleteButtonText}>Delete selected space</Text>
-                </Pressable>
-              )}
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.section}>
-              <Text style={styles.sectionNumber}>05</Text>
-              <Text style={styles.sectionLabel}>Starting layout</Text>
-              <View style={styles.choiceRow}>
-                {(["Create new", "Use preset"] as const).map((mode) => (
-                  <ChoiceButton
-                    key={mode}
-                    label={mode}
-                    selected={setupMode === mode}
-                    onPress={() => setSetupMode(mode)}
-                  />
-                ))}
-              </View>
-
-              {setupMode === "Use preset" && (
-                <View style={styles.presetList}>
-                  {PRESET_MAPS.map((map) => {
-                    const selected = preset === map;
-
-                    return (
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityState={{ selected }}
-                        key={map}
-                        onPress={() => setPreset(map)}
-                        style={[
-                          styles.presetButton,
-                          selected && styles.presetButtonSelected,
-                        ]}
-                      >
-                        <View
-                          style={[
-                            styles.radio,
-                            selected && styles.radioSelected,
-                          ]}
-                        />
-                        <Text style={styles.presetText}>{map}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.section}>
-              <Text style={styles.sectionNumber}>06</Text>
-              <Text style={styles.sectionLabel}>Animation sequence</Text>
-              <Text style={styles.sectionHelp}>
-                Build an optional timeline for this layout
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ expanded: isSequenceEditorOpen }}
-                onPress={() => setIsSequenceEditorOpen((current) => !current)}
-                style={styles.sequenceToggleButton}
-              >
-                <Text style={styles.sequenceToggleButtonText}>
-                  {isSequenceEditorOpen
-                    ? "Close sequence editor"
-                    : animationResponse.events.length > 0
-                      ? `Edit sequence (${animationResponse.events.length})`
-                      : "Add sequence of events"}
-                </Text>
-              </Pressable>
-              {isSequenceEditorOpen && (
-                <ManualAnimationBuilder
-                  configuration={fieldConfiguration}
-                  onChange={updateManualAnimation}
-                  response={animationResponse}
-                />
-              )}
-            </View>
-          </View>
-        </ScrollView>
-
         <View style={[styles.workspace, isWide && styles.workspaceWide]}>
           <View style={styles.workspaceHeader}>
-            <View>
-              <Text style={styles.workspaceTitle}>Field workspace</Text>
-              <Text style={styles.workspaceSubtitle}>
-                {fieldConfiguration.label} · {selectedTeam.name} · {setupMode}
-              </Text>
+            <View style={styles.workspaceIdentity}>
+              <View>
+                <Text style={styles.workspaceTitle}>Field workspace</Text>
+                <Text style={styles.workspaceSubtitle}>{selectedTeam.name}</Text>
+              </View>
+              <View style={styles.formatSelector}>
+                <Pressable
+                  accessibilityLabel="Select field size"
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: isFormatDropdownOpen }}
+                  onPress={() => setIsFormatDropdownOpen((open) => !open)}
+                  style={styles.formatSelectorButton}
+                >
+                  <Text style={styles.formatSelectorButtonText}>
+                    {fieldConfiguration.fieldType}
+                  </Text>
+                  <Text style={styles.formatSelectorChevron}>
+                    {isFormatDropdownOpen ? "▲" : "▼"}
+                  </Text>
+                </Pressable>
+                {isFormatDropdownOpen && (
+                  <View style={styles.formatSelectorMenu}>
+                    {FIELD_FORMATS.map((format) => (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{
+                          selected: fieldConfiguration.fieldType === format,
+                        }}
+                        key={format}
+                        onPress={() => {
+                          changeFieldFormat(format);
+                          setIsFormatDropdownOpen(false);
+                        }}
+                        style={[
+                          styles.formatSelectorOption,
+                          fieldConfiguration.fieldType === format &&
+                            styles.formatSelectorOptionSelected,
+                        ]}
+                      >
+                        <Text style={styles.formatSelectorOptionText}>{format}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+              </View>
             </View>
-            <View style={styles.playbackControls}>
+            <View
+              style={[
+                styles.playbackControls,
+                !isWide && styles.playbackControlsNarrow,
+              ]}
+            >
               <TextInput
                 accessibilityLabel="Tactical instruction"
                 editable={analysisStatus !== "loading"}
@@ -989,23 +815,29 @@ export default function HomeScreen() {
                 onChangeText={setTacticalInstruction}
                 placeholder="e.g. attack quickly through wide spaces"
                 placeholderTextColor="#89918C"
-                style={styles.tacticalInstructionInput}
+                style={[
+                  styles.tacticalInstructionInput,
+                  !isWide && styles.tacticalInstructionInputNarrow,
+                ]}
                 value={tacticalInstruction}
               />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ disabled: analysisStatus === "loading" }}
-                disabled={analysisStatus === "loading"}
-                onPress={analyzeCurrentField}
-                style={[
-                  styles.analyzeButton,
-                  analysisStatus === "loading" && styles.controlButtonDisabled,
-                ]}
-              >
-                <Text style={styles.analyzeButtonText}>
-                  {analysisStatus === "loading" ? "Analyzing…" : "Analyze"}
-                </Text>
-              </Pressable>
+              {!isPlaybackReady ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: analysisStatus === "loading" }}
+                  disabled={analysisStatus === "loading"}
+                  onPress={analyzeCurrentField}
+                  style={[
+                    styles.analyzeButton,
+                    analysisStatus === "loading" && styles.controlButtonDisabled,
+                  ]}
+                >
+                  <Text style={styles.analyzeButtonText}>
+                    {analysisStatus === "loading" ? "Analyzing…" : "Analyze"}
+                  </Text>
+                </Pressable>
+              ) : (
+                <>
               {primaryPlanResponse &&
                 (primaryPlanResponse.alternativePlans?.length ?? 0) > 0 && (
                   <View style={styles.headerPlanSelector}>
@@ -1105,13 +937,8 @@ export default function HomeScreen() {
               </Text>
               <Pressable
                 accessibilityRole="button"
-                accessibilityState={{ disabled: !isPlaybackReady }}
-                disabled={!isPlaybackReady}
                 onPress={session.status === "playing" ? pause : play}
-                style={[
-                  styles.playbackButton,
-                  !isPlaybackReady && styles.controlButtonDisabled,
-                ]}
+                style={styles.playbackButton}
               >
                 <Text style={styles.playbackButtonText}>
                   {session.status === "playing" ? "Pause" : "Play"}
@@ -1119,13 +946,8 @@ export default function HomeScreen() {
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                accessibilityState={{ disabled: !isPlaybackReady }}
-                disabled={!isPlaybackReady}
                 onPress={reset}
-                style={[
-                  styles.resetButton,
-                  !isPlaybackReady && styles.controlButtonDisabled,
-                ]}
+                style={styles.resetButton}
               >
                 <Text style={styles.resetButtonText}>Reset</Text>
               </Pressable>
@@ -1135,6 +957,8 @@ export default function HomeScreen() {
                 playbackSeconds={playbackSeconds}
                 playbackStatus={session.status}
               />
+                </>
+              )}
             </View>
           </View>
 
@@ -1145,14 +969,30 @@ export default function HomeScreen() {
           )}
 
           {selectedPhases.length > 0 && (
-            <View style={styles.planSummary}>
-              <View style={styles.planSummaryHeader}>
+            <View
+              style={[
+                styles.planSummary,
+                !isPlanSummaryExpanded && styles.planSummaryCollapsed,
+              ]}
+            >
+              <Pressable
+                accessibilityLabel={`${isPlanSummaryExpanded ? "Collapse" : "Expand"} selected tactical plan`}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: isPlanSummaryExpanded }}
+                onPress={() => setIsPlanSummaryExpanded((expanded) => !expanded)}
+                style={styles.planSummaryHeader}
+              >
                 <Text style={styles.planSummaryEyebrow}>SELECTED TACTICAL PLAN</Text>
-                <Text style={styles.planSummaryScore}>
-                  {animationResponse.diagnostics?.selectedSequenceScore?.toFixed(1)} pts
-                </Text>
-              </View>
-              <View style={styles.phaseStrip}>
+                <View style={styles.planSummaryHeaderMeta}>
+                  <Text style={styles.planSummaryScore}>
+                    {animationResponse.diagnostics?.selectedSequenceScore?.toFixed(1)} pts
+                  </Text>
+                  <Text style={styles.planSummaryToggle}>
+                    {isPlanSummaryExpanded ? "Collapse" : "Expand"}
+                  </Text>
+                </View>
+              </Pressable>
+              {isPlanSummaryExpanded && <View style={styles.phaseStrip}>
                 {selectedPhases.map((phase, index) => {
                   const active = phase.id === activePhase?.id;
                   return (
@@ -1189,37 +1029,78 @@ export default function HomeScreen() {
                     </View>
                   );
                 })}
-              </View>
+              </View>}
             </View>
           )}
 
-          {selectedFieldPlayer && (
-            <View style={styles.selectedPlayerEditor}>
-              <View style={styles.selectedPlayerEditorHeading}>
-                <Text style={styles.selectedPlayerEditorTitle}>
-                  Player {selectedFieldPlayer.number}
-                </Text>
-                <Text style={styles.selectedPlayerEditorMeta}>
-                  {selectedFieldPlayer.speedCategory.replaceAll("_", " ")} · {Math.round(selectedFieldPlayer.orientation)}°
-                </Text>
-              </View>
-              <TextInput
-                accessibilityLabel={`Player ${selectedFieldPlayer.number} name`}
-                maxLength={40}
-                onChangeText={(profileName) =>
-                  setPlayerProfileName(selectedFieldPlayer.id, profileName)
-                }
-                placeholder="Enter profile name"
-                placeholderTextColor="#89918C"
-                selectTextOnFocus
-                style={styles.playerNameInput}
-                value={selectedFieldPlayer.profileName ?? ""}
+          <Modal
+            animationType="fade"
+            onRequestClose={() => setOrientationPlayerId(null)}
+            transparent
+            visible={Boolean(selectedFieldPlayer)}
+          >
+            <View style={styles.playerEditorOverlay}>
+              <Pressable
+              accessibilityLabel="Close player name editor"
+              onPress={() => setOrientationPlayerId(null)}
+              style={styles.playerEditorBackdrop}
               />
-              <Text style={styles.selectedPlayerEditorHint}>
-                Drag the dial for orientation. Click the player again to change capability.
-              </Text>
+              <View style={styles.selectedPlayerEditor}>
+                <View style={styles.playerEditorHeader}>
+                  <View
+                    style={[
+                      styles.playerEditorAvatar,
+                      { backgroundColor: selectedFieldPlayerTeam?.color ?? "#D8FF3E" },
+                    ]}
+                  >
+                    <Text style={styles.playerEditorAvatarText}>
+                      {selectedFieldPlayer?.number}
+                    </Text>
+                  </View>
+                  <View style={styles.playerEditorHeading}>
+                    <Text style={styles.selectedPlayerEditorTitle}>Edit player</Text>
+                    <Text style={styles.playerEditorSubtitle}>
+                      {selectedFieldPlayerTeam?.name ?? "Team"} · Player {selectedFieldPlayer?.number}
+                    </Text>
+                  </View>
+                  <Pressable
+                    accessibilityLabel="Close player name editor"
+                    accessibilityRole="button"
+                    hitSlop={8}
+                    onPress={() => setOrientationPlayerId(null)}
+                    style={styles.playerEditorCloseButton}
+                  >
+                    <Text style={styles.playerEditorCloseText}>×</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.playerEditorInputLabel}>Display name</Text>
+                <TextInput
+                  accessibilityLabel={`Player ${selectedFieldPlayer?.number} name`}
+                  autoFocus
+                  maxLength={40}
+                  onChangeText={(profileName) =>
+                    selectedFieldPlayer &&
+                    setPlayerProfileName(selectedFieldPlayer.id, profileName)
+                  }
+                  placeholder="Enter profile name"
+                  placeholderTextColor="#89918C"
+                  selectTextOnFocus
+                  style={styles.playerNameInput}
+                  value={selectedFieldPlayer?.profileName ?? ""}
+                />
+                <Text style={styles.playerEditorHelperText}>
+                  This name appears beside the player on the field.
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setOrientationPlayerId(null)}
+                  style={styles.playerEditorDoneButton}
+                >
+                  <Text style={styles.playerEditorDoneButtonText}>Save changes</Text>
+                </Pressable>
+              </View>
             </View>
-          )}
+          </Modal>
 
           <View style={[styles.fieldFrame, isWide && styles.fieldFrameWide]}>
             <FieldCanvas
@@ -1233,7 +1114,6 @@ export default function HomeScreen() {
               onOpenSpaceSelect={selectOpenSpace}
               offsideReleaseLineX={offsideReleaseLineX}
               onPlayerMove={placePlayer}
-              onPlayerOrientationChange={setPlayerOrientation}
               onPlayerSelect={selectFieldPlayer}
               orientation={fieldOrientation}
               ref={fieldRef}
@@ -1262,10 +1142,8 @@ const styles = StyleSheet.create({
   },
   pageWide: {
     flex: 1,
-    flexDirection: "row",
-    gap: 10,
     overflow: "hidden",
-    padding: 10,
+    padding: 8,
   },
   sidebar: {
     zIndex: 2,
@@ -1425,65 +1303,6 @@ const styles = StyleSheet.create({
     color: "#778079",
     fontSize: 9,
   },
-  deleteButton: {
-    alignItems: "center",
-    borderColor: "#D66A5B",
-    borderRadius: 9,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
-  deleteButtonText: {
-    color: "#A63D30",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  sequenceToggleButton: {
-    alignItems: "center",
-    backgroundColor: "#183E2B",
-    borderRadius: 9,
-    marginTop: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  sequenceToggleButtonText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  presetList: {
-    gap: 8,
-    marginTop: 2,
-  },
-  presetButton: {
-    alignItems: "center",
-    borderColor: "#E3E5E0",
-    borderRadius: 9,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 10,
-    padding: 11,
-  },
-  presetButtonSelected: {
-    backgroundColor: "#F5FBEA",
-    borderColor: "#ABC754",
-  },
-  radio: {
-    borderColor: "#A7ADA9",
-    borderRadius: 6,
-    borderWidth: 1,
-    height: 12,
-    width: 12,
-  },
-  radioSelected: {
-    backgroundColor: "#A9D22D",
-    borderColor: "#77971B",
-  },
-  presetText: {
-    color: "#354139",
-    fontSize: 13,
-    fontWeight: "600",
-  },
   workspace: {
     backgroundColor: "#FFFFFF",
     borderColor: "#E1E3DD",
@@ -1496,11 +1315,67 @@ const styles = StyleSheet.create({
   },
   workspaceWide: {
     minHeight: 0,
-    padding: 8,
+    padding: 6,
+  },
+  workspaceIdentity: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+  },
+  formatSelector: {
+    position: "relative",
+    zIndex: 100,
+  },
+  formatSelectorButton: {
+    alignItems: "center",
+    backgroundColor: "#183E2B",
+    borderRadius: 8,
+    flexDirection: "row",
+    gap: 8,
+    minWidth: 72,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  formatSelectorButtonText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  formatSelectorChevron: {
+    color: "#D8FF3E",
+    fontSize: 8,
+  },
+  formatSelectorMenu: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#CBD5C8",
+    borderRadius: 8,
+    borderWidth: 1,
+    left: 0,
+    minWidth: 90,
+    overflow: "hidden",
+    position: "absolute",
+    top: 36,
+    zIndex: 110,
+  },
+  formatSelectorOption: {
+    borderBottomColor: "#E8ECE5",
+    borderBottomWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  formatSelectorOptionSelected: {
+    backgroundColor: "#EEF6D8",
+  },
+  formatSelectorOptionText: {
+    color: "#203028",
+    fontSize: 12,
+    fontWeight: "700",
   },
   workspaceHeader: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
     justifyContent: "space-between",
     marginBottom: 8,
     overflow: "visible",
@@ -1520,8 +1395,13 @@ const styles = StyleSheet.create({
   playbackControls: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
     zIndex: 30,
+  },
+  playbackControlsNarrow: {
+    flexBasis: "100%",
+    width: "100%",
   },
   tacticalInstructionInput: {
     backgroundColor: "#FFFFFF",
@@ -1533,6 +1413,10 @@ const styles = StyleSheet.create({
     minWidth: 250,
     paddingHorizontal: 10,
     paddingVertical: 7,
+  },
+  tacticalInstructionInputNarrow: {
+    flex: 1,
+    minWidth: 160,
   },
   analyzeButton: {
     backgroundColor: "#A9D22D",
@@ -1629,10 +1513,20 @@ const styles = StyleSheet.create({
     position: "relative",
     zIndex: 1,
   },
+  planSummaryCollapsed: {
+    gap: 0,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
   planSummaryHeader: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
+  },
+  planSummaryHeaderMeta: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
   },
   planSummaryEyebrow: {
     color: "#657264",
@@ -1644,6 +1538,11 @@ const styles = StyleSheet.create({
     color: "#657264",
     fontSize: 9,
     fontWeight: "700",
+  },
+  planSummaryToggle: {
+    color: "#36563F",
+    fontSize: 9,
+    fontWeight: "800",
   },
   phaseStrip: {
     flexDirection: "row",
@@ -1714,47 +1613,114 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   selectedPlayerEditor: {
-    alignItems: "center",
-    backgroundColor: "#F5F7F2",
-    borderColor: "#DCE3D7",
-    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+    borderColor: "rgba(24, 62, 43, 0.10)",
+    borderRadius: 20,
     borderWidth: 1,
-    flexDirection: "row",
+    elevation: 12,
     gap: 10,
-    marginBottom: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    maxWidth: 400,
+    padding: 22,
+    shadowColor: "#07140D",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.2,
+    shadowRadius: 30,
+    width: "92%",
   },
-  selectedPlayerEditorHeading: {
-    minWidth: 100,
+  playerEditorHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    marginBottom: 8,
+  },
+  playerEditorAvatar: {
+    alignItems: "center",
+    borderColor: "rgba(24, 37, 31, 0.16)",
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  playerEditorAvatarText: {
+    color: "#17231D",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  playerEditorHeading: {
+    flex: 1,
+    marginLeft: 12,
   },
   selectedPlayerEditorTitle: {
     color: "#18251F",
-    fontSize: 12,
+    fontSize: 18,
     fontWeight: "800",
   },
-  selectedPlayerEditorMeta: {
-    color: "#657264",
-    fontSize: 10,
+  playerEditorSubtitle: {
+    color: "#748078",
+    fontSize: 12,
     marginTop: 2,
   },
+  playerEditorCloseButton: {
+    alignItems: "center",
+    backgroundColor: "#F1F4EF",
+    borderRadius: 16,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  },
+  playerEditorCloseText: {
+    color: "#526057",
+    fontSize: 22,
+    fontWeight: "400",
+    lineHeight: 24,
+  },
+  playerEditorOverlay: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    padding: 20,
+  },
+  playerEditorBackdrop: {
+    backgroundColor: "rgba(10, 24, 17, 0.48)",
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
   playerNameInput: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#CBD5C8",
-    borderRadius: 8,
+    backgroundColor: "#F6F8F5",
+    borderColor: "#D7DED4",
+    borderRadius: 12,
     borderWidth: 1,
     color: "#18251F",
-    flexGrow: 1,
-    fontSize: 12,
-    maxWidth: 260,
-    minWidth: 150,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    fontSize: 15,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  selectedPlayerEditorHint: {
-    color: "#778079",
-    flexShrink: 1,
-    fontSize: 10,
+  playerEditorInputLabel: {
+    color: "#34463C",
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: -3,
+  },
+  playerEditorHelperText: {
+    color: "#879188",
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  playerEditorDoneButton: {
+    alignItems: "center",
+    backgroundColor: "#183E2B",
+    borderRadius: 12,
+    marginTop: 4,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  playerEditorDoneButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
   },
   fieldFrame: {
     backgroundColor: "#143B29",

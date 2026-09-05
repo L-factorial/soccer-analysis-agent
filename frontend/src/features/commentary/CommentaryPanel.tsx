@@ -140,7 +140,7 @@ export function CommentaryPanel({
         </Text>
       </Pressable>
       {showTooltip && commentary && (
-        <View pointerEvents="none" style={styles.tooltip}>
+        <View style={[styles.tooltip, { pointerEvents: "none" }]}>
           <Text style={styles.eyebrow}>AI MATCH COMMENTARY · READY</Text>
           <Text style={styles.title}>{commentary.title}</Text>
           <Text style={styles.summary}>{commentary.summary}</Text>

@@ -18,7 +18,6 @@ import { GoalMarker } from "./GoalMarker";
 import { OpenSpaceMarker } from "./OpenSpaceMarker";
 import { OffsideLineOverlay } from "./OffsideLineOverlay";
 import { PlayerMarker } from "./PlayerMarker";
-import { PlayerOrientationDial } from "./PlayerOrientationDial";
 
 type FieldCanvasProps = {
   attackingTeamId?: string | null;
@@ -31,7 +30,6 @@ type FieldCanvasProps = {
   onBallMove?: (pageX: number, pageY: number) => void;
   onPlayerMove?: (id: string, pageX: number, pageY: number) => void;
   onPlayerSelect?: (id: string) => void;
-  onPlayerOrientationChange?: (id: string, orientation: number) => void;
   onOpenSpaceResize?: (id: string, pageX: number, pageY: number) => void;
   onOpenSpaceMove?: (id: string, deltaX: number, deltaY: number) => void;
   onOpenSpaceSelect?: (id: string) => void;
@@ -54,7 +52,6 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
       onOpenSpaceResize,
       onOpenSpaceSelect,
       onPlayerMove,
-      onPlayerOrientationChange,
       onPlayerSelect,
       selectedOpenSpaceId,
       selectedPlayerId,
@@ -132,19 +129,6 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
             }
           />
         ))}
-
-        {selectedPlayerId && onPlayerOrientationChange && (() => {
-          const player = configuration.players.find(
-            ({ id }) => id === selectedPlayerId,
-          );
-          return player ? (
-            <PlayerOrientationDial
-              onChange={onPlayerOrientationChange}
-              orientation={orientation}
-              player={player}
-            />
-          ) : null;
-        })()}
       </FieldSurface>
     );
   },
