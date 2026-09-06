@@ -1193,6 +1193,7 @@ export default function HomeScreen() {
               ref={fieldRef}
               selectedOpenSpaceId={selectedOpenSpaceId}
               selectedPlayerId={orientationPlayerId}
+              separateBallDuringSetup={!isPlaybackReady && analysisStatus !== "loading"}
               showSetupHint={!isPlaybackReady && analysisStatus !== "loading" && !openSpaceTool && !orientationPlayerId}
             />
           </View>

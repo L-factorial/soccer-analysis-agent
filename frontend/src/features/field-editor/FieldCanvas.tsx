@@ -38,6 +38,7 @@ type FieldCanvasProps = {
   selectedOpenSpaceId?: string | null;
   selectedPlayerId?: string | null;
   showSetupHint?: boolean;
+  separateBallDuringSetup?: boolean;
 };
 
 export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
@@ -59,12 +60,13 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
       selectedOpenSpaceId,
       selectedPlayerId,
       showSetupHint = false,
+      separateBallDuringSetup = false,
     },
     ref,
   ) {
     const [fieldSize, setFieldSize] = useState({ height: 0, width: 0 });
     const ballScreenPosition = fieldToScreenPosition(configuration.ball.position, orientation);
-    const ballDisplayOffset = getBallDisplayOffset(
+    const ballDisplayOffset = separateBallDuringSetup ? getBallDisplayOffset(
       { x: ballScreenPosition.x * fieldSize.width, y: ballScreenPosition.y * fieldSize.height },
       configuration.players.map((player) => {
         const position = fieldToScreenPosition(player.position, orientation);
@@ -75,7 +77,7 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
         };
       }),
       fieldSize,
-    );
+    ) : { x: 0, y: 0 };
 
     return (
       <FieldSurface
