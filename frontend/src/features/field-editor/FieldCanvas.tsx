@@ -1,6 +1,8 @@
-import { forwardRef, useState } from "react";
+import { forwardRef, useEffect, useRef, useState } from "react";
 import {
   GestureResponderEvent,
+  AccessibilityInfo,
+  Animated,
   LayoutChangeEvent,
   Platform,
   StyleSheet,
@@ -20,6 +22,48 @@ import { GoalMarker } from "./GoalMarker";
 import { OpenSpaceMarker } from "./OpenSpaceMarker";
 import { OffsideLineOverlay } from "./OffsideLineOverlay";
 import { PlayerMarker } from "./PlayerMarker";
+
+function FieldSetupHint({ configuration }: { configuration: FieldConfiguration }) {
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    let disposed = false;
+    const pulse = Animated.loop(Animated.sequence([
+      Animated.timing(opacity, { toValue: 0.78, duration: 1800, useNativeDriver: true, isInteraction: false }),
+      Animated.timing(opacity, { toValue: 1, duration: 1800, useNativeDriver: true, isInteraction: false }),
+    ]));
+    const updateMotion = (reduced: boolean) => {
+      if (disposed) return;
+      pulse.stop();
+      opacity.setValue(1);
+      if (!reduced) pulse.start();
+    };
+    void AccessibilityInfo.isReduceMotionEnabled().then(updateMotion).catch(() => {});
+    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", updateMotion);
+    return () => {
+      disposed = true;
+      pulse.stop();
+      subscription.remove();
+    };
+  }, [opacity]);
+
+  return (
+    <View style={styles.setupHint}>
+      <View style={styles.setupHintCard}>
+        <Animated.View style={{ opacity, gap: 8 }}>
+          <Text style={styles.setupHintTitle}>SET UP YOUR FIELD</Text>
+          {configuration.players.length === 0 && (
+            <Text style={styles.setupHintText}>Drag players from the configuration panel.</Text>
+          )}
+          <Text style={styles.setupHintText}>
+            {Platform.OS === "web" ? "Click or tap" : "Tap"} a player to edit their name, change speed, or give them the ball.
+          </Text>
+          <Text style={styles.setupHintText}>Drag players and the ball to reposition them.</Text>
+        </Animated.View>
+      </View>
+    </View>
+  );
+}
 
 type FieldCanvasProps = {
   attackingTeamId?: string | null;
@@ -105,25 +149,6 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
           </View>
         )}
 
-        {showSetupHint && (
-          <View pointerEvents="none" style={styles.setupHint}>
-            {configuration.players.length === 0 && (
-              <View style={styles.emptyMessage}>
-                <Text style={styles.fieldLabel}>{configuration.label} FIELD</Text>
-                <Text style={styles.fieldHint}>
-                  Drag players from the configuration panel
-                </Text>
-              </View>
-            )}
-            <Text style={styles.setupHintText}>
-              {Platform.OS === "web" ? "Click" : "Tap"} a player to edit their name, change speed, or give them the ball.
-            </Text>
-            <Text style={styles.setupHintText}>
-              Drag players and the ball to reposition them.
-            </Text>
-          </View>
-        )}
-
         {configuration.goals.map((goal) => (
           <GoalMarker goal={goal} key={goal.id} orientation={orientation} />
         ))}
@@ -169,6 +194,7 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
             }
           />
         ))}
+        {showSetupHint && <FieldSetupHint configuration={configuration} />}
       </FieldSurface>
     );
   },
@@ -176,6 +202,8 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
 
 const styles = StyleSheet.create({
   setupHint: {
+    pointerEvents: "none",
+    zIndex: 50,
     position: "absolute",
     top: 0,
     bottom: 0,
@@ -183,14 +211,30 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     gap: 8,
   },
+  setupHintCard: {
+    backgroundColor: "rgba(8, 28, 19, 0.95)",
+    borderColor: "rgba(216, 255, 140, 0.65)",
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 16,
+    width: "100%",
+    maxWidth: 420,
+  },
+  setupHintTitle: {
+    color: "#D8FF8C",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+    textAlign: "center",
+  },
   setupHintText: {
-    color: "rgba(255, 255, 255, 0.55)",
-    fontSize: 17,
+    color: "#FFFFFF",
+    fontSize: 14,
     fontWeight: "600",
-    lineHeight: 26,
+    lineHeight: 21,
     textAlign: "center",
     userSelect: "none",
   },

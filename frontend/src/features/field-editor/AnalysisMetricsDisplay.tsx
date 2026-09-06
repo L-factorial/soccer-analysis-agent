@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { AnalysisMetrics, getAnalysisMetrics } from "../../api/analyze-field";
 
-export function AnalysisMetricsDisplay({ refreshKey }: { refreshKey: string }) {
+export function AnalysisMetricsDisplay({ refreshKey, compact = false }: { refreshKey: string; compact?: boolean }) {
   const [metrics, setMetrics] = useState<AnalysisMetrics | null>(null);
 
   useEffect(() => {
@@ -31,17 +31,17 @@ export function AnalysisMetricsDisplay({ refreshKey }: { refreshKey: string }) {
   }, [refreshKey]);
 
   return (
-    <View style={styles.container} accessibilityLabel={metrics
+    <View style={[styles.container, compact && styles.compactContainer]} accessibilityLabel={metrics
       ? `${metrics.ongoingAnalyses} ongoing analyses, ${metrics.analysesLast24Hours} analyses started in the last 24 hours`
       : "Analysis metrics unavailable"}>
       <View style={styles.item}>
-        <Text style={styles.value}>{metrics?.ongoingAnalyses ?? "—"}</Text>
-        <Text style={styles.label}>Ongoing</Text>
+        <Text style={[styles.value, compact && styles.compactValue]}>{metrics?.ongoingAnalyses ?? "—"}</Text>
+        <Text style={[styles.label, compact && styles.compactLabel]}>Ongoing</Text>
       </View>
-      <View style={styles.divider} />
+      <View style={[styles.divider, compact && styles.compactDivider]} />
       <View style={styles.item}>
-        <Text style={styles.value}>{metrics?.analysesLast24Hours ?? "—"}</Text>
-        <Text style={styles.label}>Started · 24h</Text>
+        <Text style={[styles.value, compact && styles.compactValue]}>{metrics?.analysesLast24Hours ?? "—"}</Text>
+        <Text style={[styles.label, compact && styles.compactLabel]}>{compact ? "24h" : "Started · 24h"}</Text>
       </View>
     </View>
   );
@@ -57,4 +57,8 @@ const styles = StyleSheet.create({
   value: { fontSize: 13, fontWeight: "800", color: "#183E2B", fontVariant: ["tabular-nums"] },
   label: { fontSize: 9, color: "#657264" },
   divider: { width: 1, height: 22, backgroundColor: "#DCE4D9" },
+  compactContainer: { gap: 6, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
+  compactValue: { fontSize: 11 },
+  compactLabel: { fontSize: 8 },
+  compactDivider: { height: 18 },
 });

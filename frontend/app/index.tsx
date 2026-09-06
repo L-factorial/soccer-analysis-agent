@@ -873,7 +873,7 @@ export default function HomeScreen() {
       >
         <View style={[styles.workspace, isWide && styles.workspaceWide]}>
           <View style={styles.workspaceHeader}>
-            <View style={styles.workspaceIdentity}>
+            <View style={[styles.workspaceIdentity, !isWide && styles.workspaceIdentityCompact]}>
               <View style={styles.workspaceBrand}>
                 <Image
                   source={require("../assets/logo.png")}
@@ -922,7 +922,7 @@ export default function HomeScreen() {
                   </View>
                 )}
               </View>
-              <AnalysisMetricsDisplay refreshKey={analysisStatus} />
+              <AnalysisMetricsDisplay refreshKey={analysisStatus} compact={!isWide} />
             </View>
             <View
               style={[
@@ -1483,11 +1483,14 @@ const styles = StyleSheet.create({
     padding: 6,
   },
   workspaceIdentity: {
+    minWidth: 0,
+    maxWidth: "100%",
     alignItems: "center",
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
   },
+  workspaceIdentityCompact: { width: "100%", gap: 6 },
   formatSelector: {
     position: "relative",
     zIndex: 100,
