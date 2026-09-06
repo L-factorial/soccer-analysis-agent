@@ -906,7 +906,7 @@ export default function HomeScreen() {
                 editable={analysisStatus !== "loading"}
                 maxLength={500}
                 onChangeText={setTacticalInstruction}
-                placeholder="e.g. attack quickly through wide spaces"
+                placeholder="LLM prompts for goal-scoring actions are currently disabled and under construction."
                 placeholderTextColor={colors.muted}
                 style={[
                   styles.tacticalInstructionInput,
