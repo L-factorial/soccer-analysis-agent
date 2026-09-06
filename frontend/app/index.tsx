@@ -1287,6 +1287,7 @@ export default function HomeScreen() {
               selectedPlayerId={orientationPlayerId}
               separateBallDuringSetup={!isPlaybackReady && analysisStatus !== "loading"}
               showSetupHint={!setupHintDismissed && !isPlaybackReady && analysisStatus !== "loading" && !openSpaceTool && !orientationPlayerId}
+              onSetupStart={() => setSetupHintDismissed(true)}
             />
             {analysisStatus === "loading" && <AnalysisOverlay />}
           </View>

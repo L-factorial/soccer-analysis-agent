@@ -1,10 +1,9 @@
-import { forwardRef, useEffect, useRef, useState } from "react";
+import { forwardRef, useState } from "react";
 import {
   GestureResponderEvent,
-  AccessibilityInfo,
-  Animated,
   LayoutChangeEvent,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -23,42 +22,22 @@ import { OpenSpaceMarker } from "./OpenSpaceMarker";
 import { OffsideLineOverlay } from "./OffsideLineOverlay";
 import { PlayerMarker } from "./PlayerMarker";
 
-function FieldSetupHint({ configuration }: { configuration: FieldConfiguration }) {
-  const opacity = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    let disposed = false;
-    let fade: Animated.CompositeAnimation | undefined;
-    let timer: ReturnType<typeof setTimeout>;
-    let reducedMotion = false;
-    void AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
-      reducedMotion = reduced;
-    }).catch(() => {});
-    const show = () => {
-      if (disposed) return;
-      opacity.setValue(1);
-      timer = setTimeout(() => {
-        fade = Animated.timing(opacity, {
-          toValue: 0, duration: reducedMotion ? 0 : 1200,
-          useNativeDriver: true, isInteraction: false,
-        });
-        fade.start(({ finished }) => {
-          if (finished && !disposed) timer = setTimeout(show, 2000);
-        });
-      }, 3500);
-    };
-    show();
-    return () => {
-      disposed = true;
-      clearTimeout(timer);
-      fade?.stop();
-    };
-  }, [opacity]);
-
+function FieldSetupHint({ configuration, onStart }: {
+  configuration: FieldConfiguration;
+  onStart?: () => void;
+}) {
   return (
-    <View style={styles.setupHint}>
+    <Pressable
+      style={styles.setupHint}
+      accessibilityRole="button"
+      accessibilityLabel="Tap anywhere to start setting up your field"
+      onPress={(event) => {
+        event.stopPropagation();
+        onStart?.();
+      }}
+    >
       <View style={styles.setupHintCard}>
-        <Animated.View style={{ opacity, gap: 8 }}>
+        <View style={{ gap: 8 }}>
           <Text style={styles.setupHintTitle}>SET UP YOUR FIELD</Text>
           {configuration.players.length === 0 && (
             <Text style={styles.setupHintText}>Drag players from the configuration panel.</Text>
@@ -67,9 +46,10 @@ function FieldSetupHint({ configuration }: { configuration: FieldConfiguration }
             {Platform.OS === "web" ? "Click or tap" : "Tap"} a player to edit their name, change speed, or give them the ball.
           </Text>
           <Text style={styles.setupHintText}>Drag players and the ball to reposition them.</Text>
-        </Animated.View>
+          <Text style={styles.setupHintStart}>Tap anywhere to start</Text>
+        </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -90,6 +70,7 @@ type FieldCanvasProps = {
   selectedOpenSpaceId?: string | null;
   selectedPlayerId?: string | null;
   showSetupHint?: boolean;
+  onSetupStart?: () => void;
   separateBallDuringSetup?: boolean;
 };
 
@@ -112,6 +93,7 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
       selectedOpenSpaceId,
       selectedPlayerId,
       showSetupHint = false,
+      onSetupStart,
       separateBallDuringSetup = false,
     },
     ref,
@@ -142,7 +124,7 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
         orientation={orientation}
         ref={ref}
       >
-        {dynamicOpenSpaces.length > 0 && (
+        {!showSetupHint && dynamicOpenSpaces.length > 0 && (
           <DynamicOpenSpaceOverlay
             openSpaces={dynamicOpenSpaces}
             orientation={orientation}
@@ -161,6 +143,7 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
           <GoalMarker goal={goal} key={goal.id} orientation={orientation} />
         ))}
 
+        {!showSetupHint && <>
         {configuration.openSpaces.map((openSpace) => (
           <OpenSpaceMarker
             fieldSize={fieldSize}
@@ -202,7 +185,8 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
             }
           />
         ))}
-        {showSetupHint && <FieldSetupHint configuration={configuration} />}
+        </>}
+        {showSetupHint && <FieldSetupHint configuration={configuration} onStart={onSetupStart} />}
       </FieldSurface>
     );
   },
@@ -210,7 +194,6 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
 
 const styles = StyleSheet.create({
   setupHint: {
-    pointerEvents: "none",
     zIndex: 50,
     position: "absolute",
     top: 0,
@@ -223,9 +206,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   setupHintCard: {
+    backgroundColor: "rgba(8, 28, 19, 0.95)",
+    borderColor: "rgba(216, 255, 140, 0.65)",
+    borderWidth: 1,
+    borderRadius: 14,
     padding: 16,
     width: "100%",
     maxWidth: 420,
+  },
+  setupHintStart: {
+    color: "#E5FFAB",
+    fontSize: 14,
+    fontWeight: "800",
+    textAlign: "center",
+    marginTop: 10,
   },
   setupHintTitle: {
     color: "#E5FFAB",
