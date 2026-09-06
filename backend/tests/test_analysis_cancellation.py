@@ -88,3 +88,23 @@ class CancellationHTTPTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.json()['analysisId'], payload['analysisId'])
                 cancelled = await client.post('cancel-analysis', json={'analysisId': payload['analysisId']})
                 self.assertEqual(cancelled.json()['status'], 'completed')
+
+    async def test_real_analysis_request_serializes_uuid(self):
+        # Exercise the real handler, including logging and search, not a mock.
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+            for include_id in (True, False):
+                payload = valid_payload()
+                field = payload["fieldConfiguration"]
+                field["players"][0]["position"] = {"x": 10000, "y": 4500}
+                field["ball"]["position"] = {"x": 10000, "y": 4500}
+                if include_id:
+                    payload['analysisId'] = str(uuid4())
+                response = await client.post('/api/v1/field-configurations/analyze', json=payload)
+                self.assertIn(response.status_code, (200, 422))
+                if response.status_code == 200:
+                    from uuid import UUID
+                    UUID(response.json()['analysisId'])
+                    if include_id:
+                        self.assertEqual(response.json()['analysisId'], payload['analysisId'])
+                else:
+                    self.assertEqual(response.json()['detail']['code'], 'no_goal_scoring_sequence')

@@ -126,7 +126,7 @@ def _analyze_field_configuration(submission: FieldSubmission) -> AnimationRespon
     """Analyze a layout and return its best supported animation sequence."""
     logger.info(
         "Received field analysis request: %s",
-        json.dumps(submission.model_dump(by_alias=True)),
+        submission.model_dump_json(by_alias=True),
     )
     # Boundary validation rejects malformed soccer layouts before constructing
     # authoritative domain state.
