@@ -58,6 +58,7 @@ type FieldCanvasProps = {
   configuration: FieldConfiguration;
   dynamicOpenSpaces?: DynamicOpenSpace[];
   orientation: FieldOrientation;
+  fillViewport?: boolean;
   offsideReleaseLineX?: number | null;
   onLayout?: (event: LayoutChangeEvent) => void;
   onFieldPress?: (event: GestureResponderEvent) => void;
@@ -81,6 +82,7 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
       dynamicOpenSpaces = [],
       attackingTeamId,
       orientation,
+      fillViewport = false,
       offsideReleaseLineX,
       onBallMove,
       onFieldPress,
@@ -116,6 +118,7 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
 
     return (
       <FieldSurface
+        fillViewport={fillViewport}
         onLayout={(event) => {
           setFieldSize(event.nativeEvent.layout);
           onLayout?.(event);

@@ -25,6 +25,7 @@ type FieldSurfaceProps = {
   onLayout?: (event: LayoutChangeEvent) => void;
   onPress?: (event: GestureResponderEvent) => void;
   orientation: FieldOrientation;
+  fillViewport?: boolean;
 };
 
 const lengthPercent = (centimeters: number) =>
@@ -39,7 +40,7 @@ const grassTexture = Platform.OS === "web" ? ({
 } as ViewStyle) : undefined;
 
 export const FieldSurface = forwardRef<View, FieldSurfaceProps>(
-  function FieldSurface({ children, onLayout, onPress, orientation }, ref) {
+  function FieldSurface({ children, onLayout, onPress, orientation, fillViewport = false }, ref) {
     const horizontal = orientation === "horizontal";
     const penaltyAreaStyle = horizontal
       ? {
@@ -84,7 +85,7 @@ export const FieldSurface = forwardRef<View, FieldSurfaceProps>(
         ref={ref}
         style={[
           styles.surface,
-          horizontal ? styles.horizontalSurface : styles.verticalSurface,
+          fillViewport ? styles.fullSurface : horizontal ? styles.horizontalSurface : styles.verticalSurface,
         ]}
       >
         <View style={[StyleSheet.absoluteFill, styles.nonInteractive]}>
@@ -181,6 +182,7 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   horizontalSurface: { aspectRatio: 4 / 3, maxHeight: "100%", width: "100%" },
+  fullSurface: { width: "100%", height: "100%", borderRadius: 0 },
   verticalSurface: { aspectRatio: 3 / 4, height: "100%", maxWidth: "100%" },
   mowingBand: { position: "absolute" },
   halfwayLine: { pointerEvents: "none", backgroundColor: "rgba(248, 250, 227, 0.8)", position: "absolute" },

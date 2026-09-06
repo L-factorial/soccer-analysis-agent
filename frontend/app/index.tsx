@@ -167,7 +167,7 @@ function DraggablePlayer({
 }
 
 export default function HomeScreen() {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const isWide = width >= 900;
   const fieldOrientation: FieldOrientation = isWide ? "horizontal" : "vertical";
   const [fieldConfiguration, setFieldConfiguration] = useState(
@@ -1293,11 +1293,61 @@ export default function HomeScreen() {
           </View>
         </View>
       </ScrollView>
+      <Modal
+        visible={session.status === "playing"}
+        animationType="none"
+        presentationStyle="fullScreen"
+        onRequestClose={pause}
+      >
+        <View style={styles.fullscreenPlayback}>
+          <View style={styles.fullscreenPitch}>
+            <FieldCanvas
+              fillViewport
+              configuration={displayedConfiguration}
+              orientation={width >= height ? "horizontal" : "vertical"}
+              attackingTeamId={animationResponse.diagnostics?.attackingTeamId}
+              dynamicOpenSpaces={visibleStandardOpenSpaces}
+              offsideReleaseLineX={offsideReleaseLineX}
+            />
+          </View>
+          <SafeAreaView style={styles.fullscreenControls}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel full-screen playback"
+              onPress={pause}
+              hitSlop={8}
+              style={styles.fullscreenCancel}
+            >
+              <Text style={styles.fullscreenCancelText}>Cancel ×</Text>
+            </Pressable>
+          </SafeAreaView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  fullscreenPlayback: { flex: 1, backgroundColor: "#2E7038" },
+  fullscreenPitch: {
+    ...StyleSheet.absoluteFill,
+    pointerEvents: "none",
+  },
+  fullscreenControls: {
+    ...StyleSheet.absoluteFill,
+    pointerEvents: "box-none",
+    alignItems: "flex-end",
+  },
+  fullscreenCancel: {
+    backgroundColor: "rgba(8, 28, 19, 0.9)",
+    borderColor: "rgba(255,255,255,0.6)",
+    borderWidth: 1,
+    borderRadius: 18,
+    margin: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  fullscreenCancelText: { color: "#FFFFFF", fontSize: 12, fontWeight: "700" },
   safeArea: {
     backgroundColor: colors.canvas,
     flex: 1,
