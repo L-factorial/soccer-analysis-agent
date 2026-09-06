@@ -1113,7 +1113,7 @@ export default function HomeScreen() {
                   <View
                     style={[
                       styles.playerEditorAvatar,
-                      { backgroundColor: selectedFieldPlayerTeam?.color ?? "#D8FF3E" },
+                      { backgroundColor: selectedFieldPlayerTeam?.color ?? fieldConfiguration.teams[0].color },
                     ]}
                   >
                     <Text style={styles.playerEditorAvatarText}>

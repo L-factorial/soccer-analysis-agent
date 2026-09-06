@@ -8,14 +8,16 @@ import {
 } from "react-native";
 
 import { Ball, fieldToScreenPosition, FieldOrientation } from "../../models";
+import { BALL_DIAMETER, MARKER_SCALE } from "./marker-layout";
 
 type BallMarkerProps = {
   ball: Ball;
   orientation: FieldOrientation;
   onMove?: (pageX: number, pageY: number) => void;
+  displayOffset?: { x: number; y: number };
 };
 
-export function BallMarker({ ball, orientation, onMove }: BallMarkerProps) {
+export function BallMarker({ ball, orientation, onMove, displayOffset = { x: 0, y: 0 } }: BallMarkerProps) {
   const screenPosition = fieldToScreenPosition(ball.position, orientation);
   const translation = useRef(new Animated.ValueXY()).current;
   const panResponder = useMemo(
@@ -59,6 +61,8 @@ export function BallMarker({ ball, orientation, onMove }: BallMarkerProps) {
         {
           left: `${screenPosition.x * 100}%`,
           top: `${screenPosition.y * 100}%`,
+          marginLeft: -BALL_DIAMETER / 2 + displayOffset.x,
+          marginTop: -BALL_DIAMETER / 2 + displayOffset.y,
           transform: [
             ...translation.getTranslateTransform(),
             { rotate: `${ball.direction}deg` },
@@ -74,21 +78,19 @@ export function BallMarker({ ball, orientation, onMove }: BallMarkerProps) {
 const styles = StyleSheet.create({
   marker: {
     alignItems: "center",
-    borderRadius: 7,
+    borderRadius: BALL_DIAMETER / 2,
     cursor: "pointer",
-    height: 14,
+    height: BALL_DIAMETER,
     justifyContent: "center",
-    marginLeft: -7,
-    marginTop: -7,
     position: "absolute",
     touchAction: "none",
     userSelect: "none",
-    width: 14,
-    zIndex: 4,
+    width: BALL_DIAMETER,
+    zIndex: 9,
   },
   ballGraphic: {
-    fontSize: 12,
-    lineHeight: 14,
+    fontSize: 12 * MARKER_SCALE,
+    lineHeight: BALL_DIAMETER,
     textAlign: "center",
   },
 });

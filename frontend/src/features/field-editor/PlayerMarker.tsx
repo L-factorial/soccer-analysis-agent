@@ -16,6 +16,7 @@ import {
   Player,
   Team,
 } from "../../models";
+import { MARKER_SCALE, PLAYER_DIAMETER, PLAYER_RING_DIAMETER } from "./marker-layout";
 
 type PlayerMarkerProps = {
   player: Player;
@@ -131,25 +132,25 @@ export function PlayerMarker({
 const styles = StyleSheet.create({
   markerContainer: {
     alignItems: "center",
-    height: 28,
+    height: 28 * MARKER_SCALE,
     justifyContent: "center",
-    marginLeft: -14,
-    marginTop: -14,
+    marginLeft: -14 * MARKER_SCALE,
+    marginTop: -14 * MARKER_SCALE,
     position: "absolute",
     touchAction: "none",
     userSelect: "none",
-    width: 28,
+    width: 28 * MARKER_SCALE,
     zIndex: 3,
   },
   marker: {
     alignItems: "center",
     borderColor: "rgba(255,255,255,0.85)",
-    borderRadius: 14,
+    borderRadius: PLAYER_DIAMETER / 2,
     borderWidth: 1,
     cursor: "pointer",
-    height: 26,
+    height: PLAYER_DIAMETER,
     justifyContent: "center",
-    width: 26,
+    width: PLAYER_DIAMETER,
     elevation: 5,
     zIndex: 2,
   },
@@ -160,11 +161,11 @@ const styles = StyleSheet.create({
     position: "absolute",
     pointerEvents: "none",
     backgroundColor: "rgba(6, 23, 13, 0.3)",
-    width: 30,
-    height: 14,
-    borderRadius: 15,
-    top: 20,
-    left: 3,
+    width: 30 * MARKER_SCALE,
+    height: 14 * MARKER_SCALE,
+    borderRadius: 15 * MARKER_SCALE,
+    top: 20 * MARKER_SCALE,
+    left: 3 * MARKER_SCALE,
     transform: [{ rotate: "-15deg" }],
   },
   highlight: {
@@ -172,8 +173,8 @@ const styles = StyleSheet.create({
     pointerEvents: "none",
     top: 2,
     left: 4,
-    width: 12,
-    height: 5,
+    width: 12 * MARKER_SCALE,
+    height: 5 * MARKER_SCALE,
     borderRadius: 8,
     backgroundColor: "rgba(255,255,255,0.24)",
     transform: [{ rotate: "-20deg" }],
@@ -188,7 +189,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   playerNameContainerBelow: {
-    top: 34,
+    top: 34 * MARKER_SCALE,
   },
   playerName: {
     backgroundColor: "rgba(15, 35, 26, 0.82)",
@@ -214,14 +215,14 @@ const styles = StyleSheet.create({
   },
   superFastOuterRing: {
     borderColor: "#14251D",
-    borderRadius: 17,
+    borderRadius: PLAYER_RING_DIAMETER / 2,
     borderWidth: 2,
-    height: 32,
-    left: -2,
+    height: PLAYER_RING_DIAMETER,
+    left: -2 * MARKER_SCALE,
     pointerEvents: "none",
     position: "absolute",
-    top: -2,
-    width: 32,
+    top: -2 * MARKER_SCALE,
+    width: PLAYER_RING_DIAMETER,
     zIndex: 1,
   },
   arrowLayer: {

@@ -101,13 +101,13 @@ export function createFieldConfiguration(
       {
         id: "team1",
         name: "team1",
-        color: "#D8FF3E",
+        color: "#70D6FF",
         defendedGoalId: "goal-left",
       },
       {
         id: "team2",
         name: "team2",
-        color: "#FF725E",
+        color: "#FFBF69",
         defendedGoalId: "goal-right",
       },
     ],
