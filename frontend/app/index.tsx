@@ -34,12 +34,19 @@ import {
   FIELD_FORMATS,
   FieldOrientation,
   OpenSpaceType,
+  PlayerSpeedCategory,
   screenDeltaToFieldDelta,
   screenToFieldPosition,
 } from "../src/models";
 
 type AnalysisStatus = "idle" | "loading" | "success" | "error";
 type CommentaryStatus = "idle" | "loading" | "ready" | "unavailable";
+
+const PLAYER_SPEED_OPTIONS: { value: PlayerSpeedCategory; label: string }[] = [
+  { value: "BASELINE", label: "Normal" },
+  { value: "FAST", label: "Fast" },
+  { value: "SUPER_FAST", label: "Super fast" },
+];
 
 function alternativeResponse(plan: AlternativePlan): AnimationResponse {
   return {
@@ -508,6 +515,15 @@ export default function HomeScreen() {
       ...current,
       players: current.players.map((player) =>
         player.id === id ? { ...player, profileName } : player,
+      ),
+    }));
+  }, []);
+
+  const setPlayerSpeed = useCallback((id: string, speedCategory: PlayerSpeedCategory) => {
+    setFieldConfiguration((current) => ({
+      ...current,
+      players: current.players.map((player) =>
+        player.id === id ? { ...player, speedCategory } : player,
       ),
     }));
   }, []);
@@ -1088,7 +1104,7 @@ export default function HomeScreen() {
           >
             <View style={styles.playerEditorOverlay}>
               <Pressable
-              accessibilityLabel="Close player name editor"
+              accessibilityLabel="Close player editor"
               onPress={() => setOrientationPlayerId(null)}
               style={styles.playerEditorBackdrop}
               />
@@ -1111,7 +1127,7 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                   <Pressable
-                    accessibilityLabel="Close player name editor"
+                    accessibilityLabel="Close player editor"
                     accessibilityRole="button"
                     hitSlop={8}
                     onPress={() => setOrientationPlayerId(null)}
@@ -1138,6 +1154,17 @@ export default function HomeScreen() {
                 <Text style={styles.playerEditorHelperText}>
                   This name appears beside the player on the field.
                 </Text>
+                <Text style={styles.playerEditorInputLabel}>Player speed</Text>
+                <View style={styles.choiceRow}>
+                  {PLAYER_SPEED_OPTIONS.map(({ value, label }) => (
+                    <ChoiceButton
+                      key={value}
+                      label={label}
+                      selected={selectedFieldPlayer?.speedCategory === value}
+                      onPress={() => selectedFieldPlayer && setPlayerSpeed(selectedFieldPlayer.id, value)}
+                    />
+                  ))}
+                </View>
                 <Pressable
                   accessibilityRole="button"
                   onPress={() => setOrientationPlayerId(null)}
@@ -1166,6 +1193,7 @@ export default function HomeScreen() {
               ref={fieldRef}
               selectedOpenSpaceId={selectedOpenSpaceId}
               selectedPlayerId={orientationPlayerId}
+              showSetupHint={!isPlaybackReady && analysisStatus !== "loading" && !openSpaceTool && !orientationPlayerId}
             />
           </View>
         </View>

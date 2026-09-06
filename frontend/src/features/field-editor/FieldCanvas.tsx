@@ -2,6 +2,7 @@ import { forwardRef, useState } from "react";
 import {
   GestureResponderEvent,
   LayoutChangeEvent,
+  Platform,
   StyleSheet,
   Text,
   View,
@@ -35,6 +36,7 @@ type FieldCanvasProps = {
   onOpenSpaceSelect?: (id: string) => void;
   selectedOpenSpaceId?: string | null;
   selectedPlayerId?: string | null;
+  showSetupHint?: boolean;
 };
 
 export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
@@ -55,6 +57,7 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
       onPlayerSelect,
       selectedOpenSpaceId,
       selectedPlayerId,
+      showSetupHint = false,
     },
     ref,
   ) {
@@ -81,6 +84,17 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
             <Text style={styles.fieldLabel}>{configuration.label} FIELD</Text>
             <Text style={styles.fieldHint}>
               Drag players from the configuration panel
+            </Text>
+          </View>
+        )}
+
+        {showSetupHint && (
+          <View pointerEvents="none" style={styles.setupHint}>
+            <Text style={styles.setupHintText}>
+              {Platform.OS === "web" ? "Click" : "Tap"} a player to set their name and speed.
+            </Text>
+            <Text style={styles.setupHintText}>
+              Drag players to reposition them.
             </Text>
           </View>
         )}
@@ -135,6 +149,22 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
 );
 
 const styles = StyleSheet.create({
+  setupHint: {
+    position: "absolute",
+    bottom: "8%",
+    left: "8%",
+    right: "8%",
+    alignItems: "center",
+    gap: 4,
+  },
+  setupHintText: {
+    color: "rgba(255, 255, 255, 0.55)",
+    fontSize: 13,
+    fontWeight: "500",
+    lineHeight: 19,
+    textAlign: "center",
+    userSelect: "none",
+  },
   emptyMessage: {
     alignItems: "center",
     padding: 20,
