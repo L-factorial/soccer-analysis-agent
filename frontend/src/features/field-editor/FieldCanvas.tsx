@@ -79,7 +79,7 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
             orientation={orientation}
           />
         )}
-        {configuration.players.length === 0 && (
+        {configuration.players.length === 0 && !showSetupHint && (
           <View style={styles.emptyMessage}>
             <Text style={styles.fieldLabel}>{configuration.label} FIELD</Text>
             <Text style={styles.fieldHint}>
@@ -90,11 +90,19 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
 
         {showSetupHint && (
           <View pointerEvents="none" style={styles.setupHint}>
+            {configuration.players.length === 0 && (
+              <View style={styles.emptyMessage}>
+                <Text style={styles.fieldLabel}>{configuration.label} FIELD</Text>
+                <Text style={styles.fieldHint}>
+                  Drag players from the configuration panel
+                </Text>
+              </View>
+            )}
             <Text style={styles.setupHintText}>
               {Platform.OS === "web" ? "Click" : "Tap"} a player to set their name and speed.
             </Text>
             <Text style={styles.setupHintText}>
-              Drag players to reposition them.
+              Drag players and the ball to reposition them.
             </Text>
           </View>
         )}
@@ -151,17 +159,20 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
 const styles = StyleSheet.create({
   setupHint: {
     position: "absolute",
-    bottom: "8%",
-    left: "8%",
-    right: "8%",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
     alignItems: "center",
-    gap: 4,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    gap: 8,
   },
   setupHintText: {
     color: "rgba(255, 255, 255, 0.55)",
-    fontSize: 13,
-    fontWeight: "500",
-    lineHeight: 19,
+    fontSize: 17,
+    fontWeight: "600",
+    lineHeight: 26,
     textAlign: "center",
     userSelect: "none",
   },
