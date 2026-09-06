@@ -115,7 +115,7 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
               </View>
             )}
             <Text style={styles.setupHintText}>
-              {Platform.OS === "web" ? "Click" : "Tap"} a player to set their name and speed.
+              {Platform.OS === "web" ? "Click" : "Tap"} a player to edit their name, change speed, or give them the ball.
             </Text>
             <Text style={styles.setupHintText}>
               Drag players and the ball to reposition them.

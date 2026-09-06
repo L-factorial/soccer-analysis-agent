@@ -569,6 +569,24 @@ export default function HomeScreen() {
   }, []);
 
 
+  function giveBallToPlayer(id: string) {
+    if (isPlaybackReady || analysisStatus === "loading") return;
+    setFieldConfiguration((current) => {
+      const player = current.players.find((candidate) => candidate.id === id);
+      if (!player) return current;
+      return {
+        ...current,
+        ball: {
+          ...current.ball,
+          position: { ...player.position },
+          direction: player.orientation,
+          speed: 0,
+        },
+      };
+    });
+    setOrientationPlayerId(null);
+  }
+
   const placeBall = useCallback((pageX: number, pageY: number) => {
     fieldRef.current?.measureInWindow((x, y, width, height) => {
       const isInsideField =
@@ -1207,6 +1225,15 @@ export default function HomeScreen() {
                     />
                   ))}
                 </View>
+                {!isPlaybackReady && analysisStatus !== "loading" && (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => selectedFieldPlayer && giveBallToPlayer(selectedFieldPlayer.id)}
+                    style={styles.playerEditorBallButton}
+                  >
+                    <Text style={styles.analyzeButtonText}>Give ball to this player</Text>
+                  </Pressable>
+                )}
                 <Pressable
                   accessibilityRole="button"
                   onPress={() => setOrientationPlayerId(null)}
@@ -1857,6 +1884,14 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 11,
     marginBottom: 4,
+  },
+  playerEditorBallButton: {
+    alignItems: "center",
+    backgroundColor: colors.accent,
+    borderRadius: 12,
+    marginTop: 4,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
   },
   playerEditorDoneButton: {
     alignItems: "center",
