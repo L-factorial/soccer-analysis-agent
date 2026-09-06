@@ -69,8 +69,25 @@ function errorMessage(body: BackendErrorBody, status: number): string {
   );
 }
 
+export async function cancelAnalysis(analysisId: string): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/field-configurations/cancel-analysis`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ analysisId }),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error("Cancellation was not confirmed by the server.");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function analyzeFieldConfiguration(
   configuration: FieldConfiguration,
+  analysisId: string,
   tacticalInstruction?: string,
   signal?: AbortSignal,
 ): Promise<AnimationResponse> {
@@ -80,7 +97,7 @@ export async function analyzeFieldConfiguration(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
-        createFieldSubmission(configuration, tacticalInstruction),
+        { ...createFieldSubmission(configuration, tacticalInstruction), analysisId },
       ),
       signal,
     },

@@ -136,6 +136,7 @@ export type SelectedPhaseDiagnostic = {
 };
 
 export type AnimationResponse = {
+  analysisId?: string | null;
   duration: number;
   events: AnimationEvent[];
   diagnostics?: PlannerDiagnostics;

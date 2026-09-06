@@ -1,3 +1,5 @@
+import { randomUUID } from "expo-crypto";
+import { AnalysisOverlay } from "../src/features/field-editor/AnalysisOverlay";
 import { colors } from "../src/theme/colors";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -20,6 +22,7 @@ import { FieldCanvas } from "../src/features/field-editor";
 import { CommentaryPanel } from "../src/features/commentary";
 import {
   analyzeFieldConfiguration,
+  cancelAnalysis,
   generateCommentary,
 } from "../src/api/analyze-field";
 import {
@@ -197,6 +200,7 @@ export default function HomeScreen() {
     null,
   );
   const fieldRef = useRef<View>(null);
+  const activeAnalysisId = useRef<string | null>(null);
   const analysisAbortController = useRef<AbortController | null>(null);
   const selectedPlanIdRef = useRef("requested");
   const openSpaceSequence = useRef(1);
@@ -279,7 +283,7 @@ export default function HomeScreen() {
   const selectedPlanLabel = selectedAlternative?.label ?? "Requested plan";
 
   useEffect(() => {
-    analysisAbortController.current?.abort();
+    stopActiveAnalysis();
     commentaryAbortController.current?.abort();
     setAnalysisStatus("idle");
     setAnalysisError(null);
@@ -294,7 +298,7 @@ export default function HomeScreen() {
 
   useEffect(
     () => () => {
-      analysisAbortController.current?.abort();
+      stopActiveAnalysis();
       commentaryAbortController.current?.abort();
     },
     [],
@@ -377,8 +381,39 @@ export default function HomeScreen() {
     }
   }
 
-  async function analyzeCurrentField() {
+  function stopActiveAnalysis() {
+    const id = activeAnalysisId.current;
+    activeAnalysisId.current = null;
     analysisAbortController.current?.abort();
+    if (id) {
+      void cancelAnalysis(id).catch(() => {
+        setAnalysisError("The field was reset, but server cancellation could not be confirmed. The analysis may still be running.");
+      });
+    }
+  }
+
+  function cancelCurrentAnalysis() {
+    stopActiveAnalysis();
+    commentaryAbortController.current?.abort();
+    reset();
+    setAnalysisStatus("idle");
+    setAnalysisError(null);
+    setCommentaryStatuses({});
+    setAnimationResponse({ duration: 0, events: [] });
+    setPrimaryPlanResponse(null);
+    selectedPlanIdRef.current = "requested";
+    setSelectedPlanId("requested");
+    setIsPlanDropdownOpen(false);
+    setIsPlanSummaryExpanded(false);
+    setSelectedPlayerId(null);
+    setOrientationPlayerId(null);
+    setOpenSpaceTool(null);
+  }
+
+  async function analyzeCurrentField() {
+    stopActiveAnalysis();
+    const analysisId = randomUUID();
+    activeAnalysisId.current = analysisId;
     commentaryAbortController.current?.abort();
     const controller = new AbortController();
     analysisAbortController.current = controller;
@@ -391,6 +426,7 @@ export default function HomeScreen() {
     try {
       const response = await analyzeFieldConfiguration(
         fieldConfiguration,
+        analysisId,
         tacticalInstruction,
         controller.signal,
       );
@@ -413,6 +449,8 @@ export default function HomeScreen() {
           error instanceof Error ? error.message : "Unable to analyze the field.",
         );
       }
+    } finally {
+      if (activeAnalysisId.current === analysisId) activeAnalysisId.current = null;
     }
   }
 
@@ -876,7 +914,7 @@ export default function HomeScreen() {
                 ]}
                 value={tacticalInstruction}
               />
-              <Pressable
+              {(analysisStatus !== "success" || commentaryEnabled) && <Pressable
                 accessibilityRole="switch"
                 accessibilityLabel="Generate commentary"
                 accessibilityState={{ checked: commentaryEnabled }}
@@ -889,20 +927,18 @@ export default function HomeScreen() {
                 <Text style={styles.commentaryToggleText}>
                   Commentary: {commentaryEnabled ? "On" : "Off"}
                 </Text>
-              </Pressable>
+              </Pressable>}
               {!isPlaybackReady ? (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityState={{ disabled: analysisStatus === "loading" }}
-                  disabled={analysisStatus === "loading"}
-                  onPress={analyzeCurrentField}
+                  onPress={analysisStatus === "loading" ? cancelCurrentAnalysis : analyzeCurrentField}
                   style={[
                     styles.analyzeButton,
-                    analysisStatus === "loading" && styles.controlButtonDisabled,
+                    analysisStatus === "loading" && styles.cancelAnalysisButton,
                   ]}
                 >
                   <Text style={styles.analyzeButtonText}>
-                    {analysisStatus === "loading" ? "Analyzing…" : "Analyze"}
+                    {analysisStatus === "loading" ? "Cancel analysis" : "Analyze"}
                   </Text>
                 </Pressable>
               ) : (
@@ -1202,6 +1238,7 @@ export default function HomeScreen() {
               separateBallDuringSetup={!isPlaybackReady && analysisStatus !== "loading"}
               showSetupHint={!isPlaybackReady && analysisStatus !== "loading" && !openSpaceTool && !orientationPlayerId}
             />
+            {analysisStatus === "loading" && <AnalysisOverlay />}
           </View>
         </View>
       </ScrollView>
@@ -1532,6 +1569,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 7,
+  },
+  cancelAnalysisButton: {
+    backgroundColor: "#FFE3CC",
   },
   analyzeButtonText: {
     color: colors.ink,

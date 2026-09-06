@@ -1,5 +1,10 @@
 import json
 import logging
+from uuid import UUID, uuid4
+
+from app.analysis_lifecycle import (
+    AnalysisCancelled, DuplicateAnalysis, analysis_registry, check_analysis_cancelled,
+)
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -46,6 +51,20 @@ def _augment_diagnostics(diagnostics, submission, applied_directives):
     )
 
 
+class AnalysisRequest(FieldSubmission):
+    analysis_id: UUID = Field(default_factory=uuid4, alias="analysisId")
+
+
+class CancelAnalysisRequest(BaseModel):
+    analysis_id: UUID = Field(alias="analysisId")
+
+
+@router.post("/cancel-analysis")
+async def cancel_analysis(request: CancelAnalysisRequest):
+    analysis_id = str(request.analysis_id)
+    return {"analysisId": analysis_id, "status": analysis_registry.cancel(analysis_id)}
+
+
 class FieldSubmissionReceipt(BaseModel):
     accepted: bool
     schema_version: str = Field(serialization_alias="schemaVersion")
@@ -83,11 +102,22 @@ def _validate_submission(submission: FieldSubmission) -> None:
     response_model=AnimationResponse,
     response_model_by_alias=True,
 )
-def analyze_field_configuration(submission: FieldSubmission) -> AnimationResponse:
+def analyze_field_configuration(submission: AnalysisRequest) -> AnimationResponse:
     """Reject excess work immediately and release capacity on every exit path."""
+    analysis_id = str(getattr(submission, "analysis_id", uuid4()))
     try:
-        with rate_limiter.analysis_slot():
-            return _analyze_field_configuration(submission)
+        with rate_limiter.analysis_slot(), analysis_registry.track(analysis_id):
+            response = _analyze_field_configuration(submission)
+            return response.model_copy(update={"analysis_id": analysis_id})
+    except AnalysisCancelled as error:
+        raise HTTPException(status_code=409, detail={
+            "code": "analysis_cancelled", "message": "Analysis was cancelled.",
+            "analysisId": analysis_id,
+        }) from error
+    except DuplicateAnalysis as error:
+        raise HTTPException(status_code=409, detail={
+            "code": "duplicate_analysis_id", "message": "Use a new analysis ID for each request.",
+        }) from error
     except LimitExceeded as error:
         raise _limit_error(error) from error
 
@@ -115,6 +145,7 @@ def _analyze_field_configuration(submission: FieldSubmission) -> AnimationRespon
             },
         ) from error
 
+    check_analysis_cancelled()
     result = engine_plan.search_result
     if engine_plan.primary_solution is None:
         diagnostics = _augment_diagnostics(
@@ -152,6 +183,7 @@ def _analyze_field_configuration(submission: FieldSubmission) -> AnimationRespon
         )
     alternatives = []
     for index, sequence in enumerate(engine_plan.selected_solutions[1:], start=1):
+        check_analysis_cancelled()
         alternative = scheduler.schedule(
             sequence,
             build_phase_planner_diagnostics(result, sequence),

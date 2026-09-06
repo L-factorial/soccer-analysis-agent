@@ -1,3 +1,4 @@
+from app.analysis_lifecycle import check_analysis_cancelled
 from collections import Counter
 from dataclasses import dataclass, replace
 
@@ -105,6 +106,7 @@ def search_tactical_phases(
     offside_policy: OffsidePolicy = OffsidePolicy(),
 ) -> PhaseSearchResult:
     """Adapt coordinated soccer phases to the shared generic beam engine."""
+    check_analysis_cancelled()
     root = initial if isinstance(initial, AnalyzedGameState) else analyze_game_state(initial, analysis_policy)
     root_node = PhaseSearchNode("phase-node-000000", root, 0, 0, 0, ())
     generated = simulated = invalid = pruned_beam = pruned_duration = 0
@@ -116,6 +118,7 @@ def search_tactical_phases(
         """Generate, validate, simulate, analyze, and score one frontier node."""
         nonlocal generated, simulated, invalid, pruned_duration
         nonlocal pruned_offside, next_id
+        check_analysis_cancelled()
         children: list[PhaseSearchNode] = []
         phases = generate_tactical_phases(
             parent.analyzed_state.game_state,
@@ -124,6 +127,7 @@ def search_tactical_phases(
         )
         generated += len(phases)
         for phase in phases:
+            check_analysis_cancelled()
             if check_phase_offside(
                 parent.analyzed_state.game_state,
                 phase,

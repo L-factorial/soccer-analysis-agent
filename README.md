@@ -120,6 +120,28 @@ arrives, playback resets; press **Play** to hear phase-aligned narration. Pause
 or Reset also stops speech. The spoken prototype currently uses the browser
 speech engine and is therefore web-only.
 
+## Analysis cancellation
+
+Each analysis request includes a new UUID in `analysisId`, echoed in the response.
+Older clients that omit it receive a generated ID. While analysis runs, a pulsing
+field overlay appears and **Cancel analysis** replaces **Analyze**. Reduced-motion
+preferences disable the pulse.
+
+`POST /api/v1/field-configurations/cancel-analysis` accepts
+`{"analysisId": "<UUID>"}` and returns the ID with status `cancelling`, `cancelled`,
+or `completed`. Search checks cancellation between phase expansions and
+simulations; capacity is released when the worker exits. A cancelled analysis
+returns HTTP 409 with code `analysis_cancelled`. Reusing an active or recently
+completed ID returns HTTP 409 with code `duplicate_analysis_id`.
+
+Cancellation restores the editable starting layout and ignores late results.
+If server cancellation cannot be confirmed, the UI reports that work may still
+be running. When commentary is off, its toggle is hidden after analysis succeeds.
+
+Cancellation state is process-local. Recent IDs are remembered for up to five
+minutes (at most 1,024 entries), including cancels that arrive before analysis.
+Restarting the worker clears this state.
+
 ## Backend request limits
 
 The backend accepts at most five concurrent analyses. Additional analysis

@@ -206,6 +206,7 @@ class CommentaryTrack(BaseModel):
 
 class AnimationResponse(BaseModel):
     """Primary scheduled timeline, diagnostics, and optional alternatives."""
+    analysis_id: str | None = Field(default=None, serialization_alias="analysisId")
     duration: float = Field(ge=0)
     events: tuple[AnimationEvent, ...]
     diagnostics: PlannerDiagnostics | None = None
