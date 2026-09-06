@@ -23,29 +23,31 @@ import { OpenSpaceMarker } from "./OpenSpaceMarker";
 import { OffsideLineOverlay } from "./OffsideLineOverlay";
 import { PlayerMarker } from "./PlayerMarker";
 
-function FieldSetupHint({ configuration }: { configuration: FieldConfiguration }) {
+function FieldSetupHint({ configuration, onDismiss }: { configuration: FieldConfiguration; onDismiss?: () => void }) {
   const opacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     let disposed = false;
-    const pulse = Animated.loop(Animated.sequence([
-      Animated.timing(opacity, { toValue: 0.78, duration: 1800, useNativeDriver: true, isInteraction: false }),
-      Animated.timing(opacity, { toValue: 1, duration: 1800, useNativeDriver: true, isInteraction: false }),
-    ]));
-    const updateMotion = (reduced: boolean) => {
-      if (disposed) return;
-      pulse.stop();
-      opacity.setValue(1);
-      if (!reduced) pulse.start();
-    };
-    void AccessibilityInfo.isReduceMotionEnabled().then(updateMotion).catch(() => {});
-    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", updateMotion);
+    let fade: Animated.CompositeAnimation | undefined;
+    let reducedMotion = false;
+    void AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
+      reducedMotion = reduced;
+    }).catch(() => {});
+    const timer = setTimeout(() => {
+      fade = Animated.timing(opacity, {
+        toValue: 0, duration: reducedMotion ? 0 : 1200,
+        useNativeDriver: true, isInteraction: false,
+      });
+      fade.start(({ finished }) => {
+        if (finished && !disposed) onDismiss?.();
+      });
+    }, 3500);
     return () => {
       disposed = true;
-      pulse.stop();
-      subscription.remove();
+      clearTimeout(timer);
+      fade?.stop();
     };
-  }, [opacity]);
+  }, [opacity, onDismiss]);
 
   return (
     <View style={styles.setupHint}>
@@ -82,6 +84,7 @@ type FieldCanvasProps = {
   selectedOpenSpaceId?: string | null;
   selectedPlayerId?: string | null;
   showSetupHint?: boolean;
+  onSetupHintDismiss?: () => void;
   separateBallDuringSetup?: boolean;
 };
 
@@ -104,6 +107,7 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
       selectedOpenSpaceId,
       selectedPlayerId,
       showSetupHint = false,
+      onSetupHintDismiss,
       separateBallDuringSetup = false,
     },
     ref,
@@ -194,7 +198,7 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
             }
           />
         ))}
-        {showSetupHint && <FieldSetupHint configuration={configuration} />}
+        {showSetupHint && <FieldSetupHint configuration={configuration} onDismiss={onSetupHintDismiss} />}
       </FieldSurface>
     );
   },
@@ -215,16 +219,15 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   setupHintCard: {
-    backgroundColor: "rgba(8, 28, 19, 0.95)",
-    borderColor: "rgba(216, 255, 140, 0.65)",
-    borderWidth: 1,
-    borderRadius: 14,
     padding: 16,
     width: "100%",
     maxWidth: 420,
   },
   setupHintTitle: {
-    color: "#D8FF8C",
+    color: "#E5FFAB",
+    textShadowColor: "#102B1B",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
     fontSize: 12,
     fontWeight: "800",
     letterSpacing: 1.2,
@@ -232,6 +235,9 @@ const styles = StyleSheet.create({
   },
   setupHintText: {
     color: "#FFFFFF",
+    textShadowColor: "#102B1B",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
     fontSize: 14,
     fontWeight: "600",
     lineHeight: 21,

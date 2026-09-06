@@ -174,6 +174,8 @@ export default function HomeScreen() {
     createFieldConfiguration("5v5"),
   );
   const [selectedTeamId, setSelectedTeamId] = useState("team1");
+  const [setupHintDismissed, setSetupHintDismissed] = useState(false);
+  const dismissSetupHint = useCallback(() => setSetupHintDismissed(true), []);
   const [animationResponse, setAnimationResponse] = useState<AnimationResponse>(
     { duration: 0, events: [] },
   );
@@ -465,6 +467,7 @@ export default function HomeScreen() {
   }
 
   function changeFieldFormat(fieldType: FieldFormat) {
+    setSetupHintDismissed(false);
     setFieldConfiguration(createFieldConfiguration(fieldType));
     setAnimationResponse((current) => ({ ...current, events: [] }));
     setSelectedPlayerId(null);
@@ -626,6 +629,7 @@ export default function HomeScreen() {
   }, [fieldOrientation]);
 
   const selectPlayer = useCallback((id: string) => {
+    setSetupHintDismissed(true);
     setSelectedPlayerId(id);
     setOrientationPlayerId(null);
     setOpenSpaceTool(null);
@@ -633,6 +637,7 @@ export default function HomeScreen() {
   }, []);
 
   const selectFieldPlayer = useCallback((id: string) => {
+    setSetupHintDismissed(true);
     setOrientationPlayerId(id);
     setSelectedPlayerId(null);
     setOpenSpaceTool(null);
@@ -1282,7 +1287,8 @@ export default function HomeScreen() {
               selectedOpenSpaceId={selectedOpenSpaceId}
               selectedPlayerId={orientationPlayerId}
               separateBallDuringSetup={!isPlaybackReady && analysisStatus !== "loading"}
-              showSetupHint={!isPlaybackReady && analysisStatus !== "loading" && !openSpaceTool && !orientationPlayerId}
+              showSetupHint={!setupHintDismissed && !isPlaybackReady && analysisStatus !== "loading" && !openSpaceTool && !orientationPlayerId}
+              onSetupHintDismiss={dismissSetupHint}
             />
             {analysisStatus === "loading" && <AnalysisOverlay />}
           </View>
