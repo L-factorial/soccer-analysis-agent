@@ -120,6 +120,23 @@ arrives, playback resets; press **Play** to hear phase-aligned narration. Pause
 or Reset also stops speech. The spoken prototype currently uses the browser
 speech engine and is therefore web-only.
 
+## Backend request limits
+
+The backend accepts at most five concurrent analyses. Additional analysis
+requests return HTTP 429 immediately with a message to try again later; capacity
+is released when an analysis finishes or fails.
+
+Commentary is limited to three admitted requests per rolling minute and 24 per
+rolling 24 hours. Requests exceeding either limit return HTTP 429 without
+calling the commentary model, even when commentary is enabled. Analysis remains
+available independently. Admitted commentary attempts count even if generation
+fails; rejected attempts do not consume quota. Both endpoints include a
+`Retry-After` header in limit responses.
+
+These limits are shared across all users within one backend process. State is
+kept in memory and resets on restart or deployment. Run a single worker and
+instance to enforce these totals; multiple processes would need a shared limiter.
+
 ## Basic screen and field information
 
 The main screen provides field-configuration controls, a tactical-instruction

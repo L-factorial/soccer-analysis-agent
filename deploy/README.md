@@ -6,6 +6,10 @@ vector database or configure persistent database storage.
 The frontend runs separately. Native Python development remains supported;
 Docker is optional on your development machine.
 
+Keep this deployment at one backend instance with one Uvicorn worker. Analysis
+and commentary limits use process-local memory, so restarting or deploying
+resets them. Additional workers or replicas would each have separate quotas.
+
 ## Run locally with Docker (optional)
 
 Install Docker with the Compose plugin. Run commands from the repository root.

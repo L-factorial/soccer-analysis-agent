@@ -20,11 +20,20 @@ from app.models.animation_response import (
     CommentaryTrack,
 )
 from app.models.field_submission import FieldSubmission
+from app.rate_limits import LimitExceeded, rate_limiter
 from app.scheduling import PhaseAnimationScheduler
 from app.validation import FieldSubmissionValidationError, validate_field_submission
 
 router = APIRouter(prefix="/field-configurations", tags=["field configurations"])
 logger = logging.getLogger("uvicorn.error")
+
+
+def _limit_error(error: LimitExceeded) -> HTTPException:
+    return HTTPException(
+        status_code=429,
+        detail={"code": error.code, "message": str(error)},
+        headers={"Retry-After": str(error.retry_after)},
+    )
 
 
 def _augment_diagnostics(diagnostics, submission, applied_directives):
@@ -75,6 +84,15 @@ def _validate_submission(submission: FieldSubmission) -> None:
     response_model_by_alias=True,
 )
 def analyze_field_configuration(submission: FieldSubmission) -> AnimationResponse:
+    """Reject excess work immediately and release capacity on every exit path."""
+    try:
+        with rate_limiter.analysis_slot():
+            return _analyze_field_configuration(submission)
+    except LimitExceeded as error:
+        raise _limit_error(error) from error
+
+
+def _analyze_field_configuration(submission: FieldSubmission) -> AnimationResponse:
     """Analyze a layout and return its best supported animation sequence."""
     logger.info(
         "Received field analysis request: %s",
@@ -174,6 +192,10 @@ def create_commentary(request: CommentaryRequest) -> CommentaryTrack:
                 "message": "Enable commentary before requesting generation",
             },
         )
+    try:
+        rate_limiter.reserve_commentary()
+    except LimitExceeded as error:
+        raise _limit_error(error) from error
     commentary = generate_commentary(
         request.animation_response,
         request.field_submission,
