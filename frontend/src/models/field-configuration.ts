@@ -38,11 +38,17 @@ const FORMATIONS: Record<FieldFormat, ReadonlyArray<readonly [number, number]>> 
   ],
 };
 
+const DEFAULT_PLAYER_NAMES = {
+  team1: ["Alex", "Ben", "Cole", "Diego", "Eli", "Finn", "Hugo", "Ivan", "Jack", "Kai", "Leo"],
+  team2: ["Arlo", "Beau", "Cruz", "Drew", "Enzo", "Felix", "Gus", "Jude", "Luca", "Milo", "Noah"],
+} as const;
+
 function createDefaultPlayers(fieldType: FieldFormat): Player[] {
   return (["team1", "team2"] as const).flatMap((teamId) =>
     FORMATIONS[fieldType].map(([xFraction, yFraction], index) => ({
       id: `${teamId}-${index + 1}`,
       name: `${teamId}-${index + 1}`,
+      profileName: DEFAULT_PLAYER_NAMES[teamId][index],
       number: index + 1,
       teamId,
       position: {

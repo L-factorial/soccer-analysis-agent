@@ -808,7 +808,6 @@ export default function HomeScreen() {
             <View style={styles.workspaceIdentity}>
               <View>
                 <Text style={styles.workspaceTitle}>Field workspace</Text>
-                <Text style={styles.workspaceSubtitle}>{selectedTeam.name}</Text>
               </View>
               <View style={styles.formatSelector}>
                 <Pressable
@@ -1462,11 +1461,6 @@ const styles = StyleSheet.create({
     color: "#18251F",
     fontSize: 18,
     fontWeight: "700",
-  },
-  workspaceSubtitle: {
-    color: "#778079",
-    fontSize: 12,
-    marginTop: 3,
   },
   playbackControls: {
     alignItems: "center",
