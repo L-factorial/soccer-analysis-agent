@@ -1,7 +1,9 @@
+import { colors } from "../src/theme/colors";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   GestureResponderEvent,
+  Image,
   Modal,
   PanResponder,
   Pressable,
@@ -806,7 +808,12 @@ export default function HomeScreen() {
         <View style={[styles.workspace, isWide && styles.workspaceWide]}>
           <View style={styles.workspaceHeader}>
             <View style={styles.workspaceIdentity}>
-              <View>
+              <View style={styles.workspaceBrand}>
+                <Image
+                  source={require("../assets/logo.png")}
+                  style={styles.workspaceLogo}
+                  accessibilityLabel="L factorial soccer logo"
+                />
                 <Text style={styles.workspaceTitle}>Field workspace</Text>
               </View>
               <View style={styles.formatSelector}>
@@ -862,7 +869,7 @@ export default function HomeScreen() {
                 maxLength={500}
                 onChangeText={setTacticalInstruction}
                 placeholder="e.g. attack quickly through wide spaces"
-                placeholderTextColor="#89918C"
+                placeholderTextColor={colors.muted}
                 style={[
                   styles.tacticalInstructionInput,
                   !isWide && styles.tacticalInstructionInputNarrow,
@@ -1145,7 +1152,7 @@ export default function HomeScreen() {
                     setPlayerProfileName(selectedFieldPlayer.id, profileName)
                   }
                   placeholder="Enter profile name"
-                  placeholderTextColor="#89918C"
+                  placeholderTextColor={colors.muted}
                   selectTextOnFocus
                   style={styles.playerNameInput}
                   value={selectedFieldPlayer?.profileName ?? ""}
@@ -1204,7 +1211,7 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: "#F3F1EA",
+    backgroundColor: colors.canvas,
     flex: 1,
   },
   pageScroller: {
@@ -1240,26 +1247,26 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   brandMark: {
-    backgroundColor: "#D8FF3E",
+    backgroundColor: colors.accent,
     borderRadius: 5,
     height: 38,
     transform: [{ rotate: "8deg" }],
     width: 10,
   },
   eyebrow: {
-    color: "#68716A",
+    color: colors.muted,
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 1.5,
   },
   title: {
-    color: "#14251D",
+    color: colors.ink,
     fontSize: 18,
     fontWeight: "700",
   },
   configuration: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#E1E3DD",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: 18,
     borderWidth: 1,
     padding: 11,
@@ -1268,18 +1275,18 @@ const styles = StyleSheet.create({
     gap: 9,
   },
   sectionNumber: {
-    color: "#9BA19D",
+    color: colors.muted,
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 1,
   },
   sectionLabel: {
-    color: "#18251F",
+    color: colors.ink,
     fontSize: 15,
     fontWeight: "700",
   },
   sectionHelp: {
-    color: "#778079",
+    color: colors.muted,
     fontSize: 12,
     marginTop: -7,
   },
@@ -1289,7 +1296,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   choiceButton: {
-    backgroundColor: "#F1F3EF",
+    backgroundColor: colors.inset,
     borderColor: "transparent",
     borderRadius: 9,
     borderWidth: 1,
@@ -1297,22 +1304,22 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   choiceButtonSelected: {
-    backgroundColor: "#183E2B",
-    borderColor: "#183E2B",
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   choiceButtonPressed: {
     opacity: 0.72,
   },
   choiceButtonText: {
-    color: "#455149",
+    color: colors.muted,
     fontSize: 13,
     fontWeight: "600",
   },
   choiceButtonTextSelected: {
-    color: "#FFFFFF",
+    color: colors.onPrimary,
   },
   divider: {
-    backgroundColor: "#ECEDE9",
+    backgroundColor: colors.divider,
     height: 1,
     marginVertical: 13,
   },
@@ -1323,8 +1330,8 @@ const styles = StyleSheet.create({
   },
   playerToken: {
     alignItems: "center",
-    backgroundColor: "#D8FF3E",
-    borderColor: "#8EAA27",
+    backgroundColor: colors.accent,
+    borderColor: colors.accentBorder,
     borderRadius: 19,
     borderWidth: 1,
     cursor: "pointer",
@@ -1339,19 +1346,19 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   playerTokenSelected: {
-    borderColor: "#14251D",
+    borderColor: colors.ink,
     borderWidth: 3,
     opacity: 1,
     transform: [{ scale: 1.12 }],
   },
   playerTokenText: {
-    color: "#17231D",
+    color: colors.ink,
     fontSize: 12,
     fontWeight: "800",
   },
   teamButton: {
     alignItems: "center",
-    borderColor: "#DADFD8",
+    borderColor: colors.border,
     borderRadius: 9,
     borderWidth: 1,
     flexDirection: "row",
@@ -1359,8 +1366,8 @@ const styles = StyleSheet.create({
     padding: 7,
   },
   teamButtonSelected: {
-    backgroundColor: "#F1F5F0",
-    borderColor: "#183E2B",
+    backgroundColor: colors.inset,
+    borderColor: colors.primary,
   },
   teamSwatch: {
     borderColor: "#FFFFFF",
@@ -1370,17 +1377,17 @@ const styles = StyleSheet.create({
     width: 20,
   },
   teamButtonText: {
-    color: "#18251F",
+    color: colors.ink,
     fontSize: 11,
     fontWeight: "700",
   },
   teamGoalText: {
-    color: "#778079",
+    color: colors.muted,
     fontSize: 9,
   },
   workspace: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#E1E3DD",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: 20,
     borderWidth: 1,
     flex: 1,
@@ -1395,6 +1402,7 @@ const styles = StyleSheet.create({
   workspaceIdentity: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 12,
   },
   formatSelector: {
@@ -1403,7 +1411,7 @@ const styles = StyleSheet.create({
   },
   formatSelectorButton: {
     alignItems: "center",
-    backgroundColor: "#183E2B",
+    backgroundColor: colors.primary,
     borderRadius: 8,
     flexDirection: "row",
     gap: 8,
@@ -1412,17 +1420,17 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   formatSelectorButtonText: {
-    color: "#FFFFFF",
+    color: colors.onPrimary,
     fontSize: 12,
     fontWeight: "800",
   },
   formatSelectorChevron: {
-    color: "#D8FF3E",
+    color: colors.accent,
     fontSize: 8,
   },
   formatSelectorMenu: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#CBD5C8",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
     left: 0,
@@ -1433,20 +1441,25 @@ const styles = StyleSheet.create({
     zIndex: 110,
   },
   formatSelectorOption: {
-    borderBottomColor: "#E8ECE5",
+    borderBottomColor: colors.divider,
     borderBottomWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   formatSelectorOptionSelected: {
-    backgroundColor: "#EEF6D8",
+    backgroundColor: colors.accentSoft,
   },
   formatSelectorOptionText: {
-    color: "#203028",
+    color: colors.ink,
     fontSize: 12,
     fontWeight: "700",
   },
   workspaceHeader: {
+    backgroundColor: colors.inset,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 10,
     alignItems: "center",
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1458,9 +1471,18 @@ const styles = StyleSheet.create({
     zIndex: 200,
   },
   workspaceTitle: {
-    color: "#18251F",
+    color: colors.ink,
     fontSize: 18,
     fontWeight: "700",
+  },
+  workspaceBrand: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  workspaceLogo: {
+    width: 40,
+    height: 40,
   },
   playbackControls: {
     alignItems: "center",
@@ -1474,11 +1496,11 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   tacticalInstructionInput: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#CBD5C8",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
-    color: "#18251F",
+    color: colors.ink,
     fontSize: 11,
     minWidth: 250,
     paddingHorizontal: 10,
@@ -1489,30 +1511,30 @@ const styles = StyleSheet.create({
     minWidth: 160,
   },
   commentaryToggle: {
-    borderColor: "#CBD5C8",
+    borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
-    backgroundColor: "#F1F4EF",
+    backgroundColor: colors.inset,
     paddingHorizontal: 10,
     paddingVertical: 7,
   },
   commentaryToggleEnabled: {
-    backgroundColor: "#EEF6D8",
-    borderColor: "#77971B",
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accentBorder,
   },
   commentaryToggleText: {
-    color: "#183E2B",
+    color: colors.primary,
     fontSize: 12,
     fontWeight: "700",
   },
   analyzeButton: {
-    backgroundColor: "#A9D22D",
+    backgroundColor: colors.accent,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
   analyzeButtonText: {
-    color: "#17231D",
+    color: colors.ink,
     fontSize: 11,
     fontWeight: "800",
   },
@@ -1520,7 +1542,7 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   analysisError: {
-    color: "#A63D30",
+    color: colors.danger,
     fontSize: 12,
     fontWeight: "600",
     marginBottom: 8,
@@ -1532,8 +1554,8 @@ const styles = StyleSheet.create({
   },
   headerPlanButton: {
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderColor: "#CBD5C8",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: "row",
@@ -1543,8 +1565,8 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   headerPlanMenu: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#CBD5C8",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
     minWidth: 210,
@@ -1561,37 +1583,37 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   commentaryIndicator: {
-    color: "#7B847E",
+    color: colors.muted,
     fontSize: 9,
     fontWeight: "800",
   },
   commentaryIndicatorReady: {
-    color: "#4F7A11",
+    color: colors.success,
     fontSize: 13,
   },
   planDropdownChevron: {
-    color: "#657264",
+    color: colors.muted,
     fontSize: 9,
     marginLeft: 12,
   },
   planDropdownItem: {
-    borderBottomColor: "#E8ECE5",
+    borderBottomColor: colors.divider,
     borderBottomWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
   planOptionSelected: {
-    backgroundColor: "#EEF6D8",
-    borderColor: "#A9D22D",
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accent,
   },
   planOptionLabel: {
-    color: "#203028",
+    color: colors.ink,
     fontSize: 11,
     fontWeight: "800",
   },
   planSummary: {
-    backgroundColor: "#F4F7EF",
-    borderColor: "#DDE5D3",
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accentBorder,
     borderRadius: 10,
     borderWidth: 1,
     gap: 7,
@@ -1616,18 +1638,18 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   planSummaryEyebrow: {
-    color: "#657264",
+    color: colors.muted,
     fontSize: 9,
     fontWeight: "800",
     letterSpacing: 1.1,
   },
   planSummaryScore: {
-    color: "#657264",
+    color: colors.muted,
     fontSize: 9,
     fontWeight: "700",
   },
   planSummaryToggle: {
-    color: "#36563F",
+    color: colors.muted,
     fontSize: 9,
     fontWeight: "800",
   },
@@ -1637,8 +1659,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   phaseCard: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#DCE1D9",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: 7,
     borderWidth: 1,
     minWidth: 118,
@@ -1646,61 +1668,61 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   phaseCardActive: {
-    backgroundColor: "#183E2B",
-    borderColor: "#183E2B",
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   phaseCardIndex: {
-    color: "#7A837C",
+    color: colors.muted,
     fontSize: 8,
     fontWeight: "700",
   },
   phaseCardTitle: {
-    color: "#203028",
+    color: colors.ink,
     fontSize: 10,
     fontWeight: "800",
     marginTop: 2,
   },
   phaseCardDetail: {
-    color: "#69736C",
+    color: colors.muted,
     fontSize: 9,
     marginTop: 1,
   },
   phaseCardTextActive: {
-    color: "#FFFFFF",
+    color: colors.onPrimary,
   },
   phaseCardDetailActive: {
     color: "#D9E8DE",
   },
   playbackTime: {
-    color: "#68716A",
+    color: colors.muted,
     fontSize: 11,
     fontVariant: ["tabular-nums"],
     fontWeight: "700",
   },
   playbackButton: {
-    backgroundColor: "#183E2B",
+    backgroundColor: colors.primary,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
   playbackButtonText: {
-    color: "#FFFFFF",
+    color: colors.onPrimary,
     fontSize: 11,
     fontWeight: "700",
   },
   resetButton: {
-    backgroundColor: "#F2F4F0",
+    backgroundColor: colors.inset,
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 7,
   },
   resetButtonText: {
-    color: "#485249",
+    color: colors.muted,
     fontSize: 11,
     fontWeight: "700",
   },
   selectedPlayerEditor: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     borderColor: "rgba(24, 62, 43, 0.10)",
     borderRadius: 20,
     borderWidth: 1,
@@ -1729,7 +1751,7 @@ const styles = StyleSheet.create({
     width: 44,
   },
   playerEditorAvatarText: {
-    color: "#17231D",
+    color: colors.ink,
     fontSize: 15,
     fontWeight: "900",
   },
@@ -1738,25 +1760,25 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   selectedPlayerEditorTitle: {
-    color: "#18251F",
+    color: colors.ink,
     fontSize: 18,
     fontWeight: "800",
   },
   playerEditorSubtitle: {
-    color: "#748078",
+    color: colors.muted,
     fontSize: 12,
     marginTop: 2,
   },
   playerEditorCloseButton: {
     alignItems: "center",
-    backgroundColor: "#F1F4EF",
+    backgroundColor: colors.inset,
     borderRadius: 16,
     height: 32,
     justifyContent: "center",
     width: 32,
   },
   playerEditorCloseText: {
-    color: "#526057",
+    color: colors.muted,
     fontSize: 22,
     fontWeight: "400",
     lineHeight: 24,
@@ -1776,36 +1798,36 @@ const styles = StyleSheet.create({
     top: 0,
   },
   playerNameInput: {
-    backgroundColor: "#F6F8F5",
-    borderColor: "#D7DED4",
+    backgroundColor: colors.inset,
+    borderColor: colors.border,
     borderRadius: 12,
     borderWidth: 1,
-    color: "#18251F",
+    color: colors.ink,
     fontSize: 15,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
   playerEditorInputLabel: {
-    color: "#34463C",
+    color: colors.ink,
     fontSize: 12,
     fontWeight: "700",
     marginBottom: -3,
   },
   playerEditorHelperText: {
-    color: "#879188",
+    color: colors.muted,
     fontSize: 11,
     marginBottom: 4,
   },
   playerEditorDoneButton: {
     alignItems: "center",
-    backgroundColor: "#183E2B",
+    backgroundColor: colors.primary,
     borderRadius: 12,
     marginTop: 4,
     paddingHorizontal: 18,
     paddingVertical: 12,
   },
   playerEditorDoneButtonText: {
-    color: "#FFFFFF",
+    color: colors.onPrimary,
     fontSize: 13,
     fontWeight: "800",
   },

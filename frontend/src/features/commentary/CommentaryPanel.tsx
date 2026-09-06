@@ -1,3 +1,4 @@
+import { colors } from "../../theme/colors";
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -157,17 +158,17 @@ export function CommentaryPanel({
 const styles = StyleSheet.create({
   anchor: { position: "relative", zIndex: 40 },
   badge: {
-    borderColor: "#CBD5C8",
+    borderColor: colors.border,
     borderRadius: 8,
     borderWidth: 1,
     paddingHorizontal: 9,
     paddingVertical: 7,
   },
-  badgeReady: { backgroundColor: "#EAF5CB", borderColor: "#86A91F" },
-  badgeText: { color: "#68716A", fontSize: 10, fontWeight: "800" },
-  badgeTextReady: { color: "#36500D" },
+  badgeReady: { backgroundColor: colors.accentSoft, borderColor: colors.accentBorder },
+  badgeText: { color: colors.muted, fontSize: 10, fontWeight: "800" },
+  badgeTextReady: { color: colors.success },
   tooltip: {
-    backgroundColor: "#132A20",
+    backgroundColor: colors.primary,
     borderRadius: 10,
     gap: 6,
     padding: 12,
@@ -178,13 +179,13 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   eyebrow: {
-    color: "#A9D22D",
+    color: colors.accent,
     fontSize: 9,
     fontWeight: "800",
     letterSpacing: 1.2,
   },
-  title: { color: "#FFFFFF", fontSize: 15, fontWeight: "800", marginTop: 2 },
+  title: { color: colors.onPrimary, fontSize: 15, fontWeight: "800", marginTop: 2 },
   summary: { color: "#C7D3CC", fontSize: 11, lineHeight: 16 },
-  activeCue: { color: "#FFFFFF", fontSize: 14, fontWeight: "600", lineHeight: 20 },
+  activeCue: { color: colors.onPrimary, fontSize: 14, fontWeight: "600", lineHeight: 20 },
   note: { color: "#94A39B", fontSize: 10 },
 });

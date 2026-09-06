@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>L! Soccer</title>
+  <rect width="128" height="128" rx="28" fill="#18251F"/>
+  <path d="M14 39h11v39h19v11H14z" fill="#FFFFFF"/>
+  <path d="M49 39h11l-1 33h-9z" fill="#70D6FF"/>
+  <circle cx="54.5" cy="83.5" r="5.5" fill="#70D6FF"/>
+  <circle cx="93" cy="64" r="25" fill="#FFFFFF"/>
+  <g stroke="#18251F" stroke-width="2" stroke-linejoin="round">
+    <path d="m93 53 10 7-4 12H87l-4-12z" fill="#18251F"/>
+    <path d="m93 53 0-9m10 16 10-3M99 72l6 9M87 72l-6 9m2-21-10-3" fill="none"/>
+    <path d="m86 40 7 5 7-5m17 12-5 5 5 8m-11 20-1-5-9 7m-16-3 2-4-9-7m-4-18 5 2 4-10" fill="none" stroke-width="4"/>
+  </g>
+</svg>

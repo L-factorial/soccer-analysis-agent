@@ -1,3 +1,4 @@
+import { colors } from "../../theme/colors";
 import { useMemo, useRef, useState } from "react";
 import { PanResponder, StyleSheet, Text, View } from "react-native";
 
@@ -161,11 +162,11 @@ export function TimelineRangeSlider({
 const styles = StyleSheet.create({
   container: { gap: 2, marginTop: 7 },
   labels: { flexDirection: "row", justifyContent: "space-between" },
-  value: { color: "#183E2B", fontSize: 9, fontWeight: "800" },
-  caption: { color: "#8A938D", fontSize: 8 },
+  value: { color: colors.primary, fontSize: 9, fontWeight: "800" },
+  caption: { color: colors.muted, fontSize: 8 },
   touchArea: { height: 28, justifyContent: "center", marginHorizontal: 7 },
   track: {
-    backgroundColor: "#D9DED8",
+    backgroundColor: colors.border,
     borderRadius: 3,
     height: 5,
     left: THUMB_SIZE / 2,
@@ -173,13 +174,13 @@ const styles = StyleSheet.create({
     right: THUMB_SIZE / 2,
   },
   selectedTrack: {
-    backgroundColor: "#A9D22D",
+    backgroundColor: colors.accent,
     borderRadius: 3,
     height: 5,
     position: "absolute",
   },
   thumb: {
-    backgroundColor: "#183E2B",
+    backgroundColor: colors.primary,
     borderColor: "#FFFFFF",
     borderRadius: 8,
     borderWidth: 2,
@@ -193,10 +194,10 @@ const styles = StyleSheet.create({
   startThumb: { top: 2, zIndex: 3 },
   endThumb: { bottom: 2, zIndex: 2 },
   scale: { flexDirection: "row", justifyContent: "space-between" },
-  scaleText: { color: "#9BA19D", fontSize: 8 },
+  scaleText: { color: colors.muted, fontSize: 8 },
   tickRow: { height: 3, marginHorizontal: 7, position: "relative" },
   tick: {
-    backgroundColor: "#AEB5B0",
+    backgroundColor: colors.border,
     height: 3,
     position: "absolute",
     width: 1,

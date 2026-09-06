@@ -9,7 +9,8 @@
     "platforms": ["ios", "android", "web"],
     "web": {
       "bundler": "metro",
-      "output": "single"
+      "output": "single",
+      "favicon": "./assets/logo.png"
     },
     "plugins": ["expo-router"],
     "experiments": {
