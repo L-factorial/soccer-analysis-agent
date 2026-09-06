@@ -16,7 +16,7 @@ import {
   Player,
   Team,
 } from "../../models";
-import { MARKER_SCALE, PLAYER_DIAMETER, PLAYER_RING_DIAMETER } from "./marker-layout";
+import { MARKER_SCALE, MOBILE_PLAYER_SCALE, PLAYER_DIAMETER, PLAYER_RING_DIAMETER } from "./marker-layout";
 
 type PlayerMarkerProps = {
   player: Player;
@@ -96,7 +96,6 @@ export function PlayerMarker({
         },
       ]}
     >
-      <View style={styles.groundShadow} />
       {!!player.profileName?.trim() && (
         <View
           style={[
@@ -104,11 +103,13 @@ export function PlayerMarker({
             screenPosition.y < 0.06 && styles.playerNameContainerBelow,
           ]}
         >
-          <Text numberOfLines={1} style={styles.playerName}>
+          <Text numberOfLines={1} style={[styles.playerName, orientation === "vertical" && styles.mobilePlayerName]}>
             {player.profileName.trim()}
           </Text>
         </View>
       )}
+      <View style={[styles.playerVisual, orientation === "vertical" && styles.mobilePlayerVisual]}>
+      <View style={styles.groundShadow} />
       {player.speedCategory === "SUPER_FAST" && (
         <Animated.View style={styles.superFastOuterRing} />
       )}
@@ -125,11 +126,24 @@ export function PlayerMarker({
         <View style={styles.highlight} />
         <Text style={styles.label}>{player.number}</Text>
       </Animated.View>
+      </View>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
+  playerVisual: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    pointerEvents: "none",
+  },
+  mobilePlayerVisual: { transform: [{ scale: MOBILE_PLAYER_SCALE }] },
+  mobilePlayerName: { fontSize: 12 },
   markerContainer: {
     alignItems: "center",
     height: 28 * MARKER_SCALE,

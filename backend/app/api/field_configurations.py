@@ -6,7 +6,7 @@ from app.analysis_lifecycle import (
     AnalysisCancelled, DuplicateAnalysis, analysis_registry, check_analysis_cancelled,
 )
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from app.builders import (
@@ -57,6 +57,12 @@ class AnalysisRequest(FieldSubmission):
 
 class CancelAnalysisRequest(BaseModel):
     analysis_id: UUID = Field(alias="analysisId")
+
+
+@router.get("/metrics")
+async def analysis_metrics(response: Response) -> dict[str, int]:
+    response.headers["Cache-Control"] = "no-store"
+    return analysis_registry.metrics()
 
 
 @router.post("/cancel-analysis")

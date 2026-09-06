@@ -9,7 +9,7 @@ import {
 } from "react-native";
 
 import { FieldConfiguration, FieldOrientation, fieldToScreenPosition } from "../../models";
-import { getBallDisplayOffset, PLAYER_DIAMETER, PLAYER_RING_DIAMETER } from "./marker-layout";
+import { getBallDisplayOffset, MOBILE_PLAYER_SCALE, PLAYER_DIAMETER, PLAYER_RING_DIAMETER } from "./marker-layout";
 import { BallMarker } from "./BallMarker";
 import {
   DynamicOpenSpace,
@@ -73,7 +73,8 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
         return {
           x: position.x * fieldSize.width,
           y: position.y * fieldSize.height,
-          radius: (player.speedCategory === "SUPER_FAST" ? PLAYER_RING_DIAMETER : PLAYER_DIAMETER) / 2,
+          radius: (player.speedCategory === "SUPER_FAST" ? PLAYER_RING_DIAMETER : PLAYER_DIAMETER)
+            * (orientation === "vertical" ? MOBILE_PLAYER_SCALE : 1) / 2,
         };
       }),
       fieldSize,

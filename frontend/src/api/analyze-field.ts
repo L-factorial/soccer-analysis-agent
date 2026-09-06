@@ -19,6 +19,20 @@ type BackendErrorBody = {
   };
 };
 
+export type AnalysisMetrics = {
+  ongoingAnalyses: number;
+  analysesLast24Hours: number;
+};
+
+export async function getAnalysisMetrics(signal: AbortSignal): Promise<AnalysisMetrics> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/field-configurations/metrics`, {
+    signal,
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error("Analysis metrics are unavailable.");
+  return response.json();
+}
+
 export class FieldAnalysisError extends Error {
   constructor(
     message: string,

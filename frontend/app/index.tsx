@@ -19,6 +19,7 @@ import {
 } from "react-native";
 
 import { FieldCanvas } from "../src/features/field-editor";
+import { AnalysisMetricsDisplay } from "../src/features/field-editor/AnalysisMetricsDisplay";
 import { CommentaryPanel } from "../src/features/commentary";
 import {
   analyzeFieldConfiguration,
@@ -474,6 +475,15 @@ export default function HomeScreen() {
     openSpaceSequence.current = 1;
   }
 
+  function startNewField() {
+    cancelCurrentAnalysis();
+    changeFieldFormat("5v5");
+    setTacticalInstruction("");
+    setIsFormatDropdownOpen(false);
+    commentaryEnabledRef.current = false;
+    setCommentaryEnabled(false);
+  }
+
   const placePlayer = useCallback((id: string, pageX: number, pageY: number) => {
     fieldRef.current?.measureInWindow((x, y, width, height) => {
       const isInsideField =
@@ -912,6 +922,7 @@ export default function HomeScreen() {
                   </View>
                 )}
               </View>
+              <AnalysisMetricsDisplay refreshKey={analysisStatus} />
             </View>
             <View
               style={[
@@ -1072,7 +1083,15 @@ export default function HomeScreen() {
                 onPress={reset}
                 style={styles.resetButton}
               >
-                <Text style={styles.resetButtonText}>Reset</Text>
+                <Text style={styles.resetButtonText}>Replay</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityHint="Clear the simulation and restore the default 5v5 field"
+                onPress={startNewField}
+                style={styles.resetButton}
+              >
+                <Text style={styles.resetButtonText}>New field</Text>
               </Pressable>
               {commentaryEnabled && <CommentaryPanel
                 commentary={animationResponse.commentary}

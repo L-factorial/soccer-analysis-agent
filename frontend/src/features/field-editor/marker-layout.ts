@@ -1,4 +1,5 @@
 export const MARKER_SCALE = 1.2;
+export const MOBILE_PLAYER_SCALE = 0.8;
 export const PLAYER_DIAMETER = 26 * MARKER_SCALE;
 export const PLAYER_RING_DIAMETER = 32 * MARKER_SCALE;
 export const BALL_DIAMETER = 14 * MARKER_SCALE;

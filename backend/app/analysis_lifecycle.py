@@ -1,5 +1,6 @@
 """Thread-safe cooperative cancellation for the single backend worker."""
-from collections import OrderedDict
+from collections import OrderedDict, deque
+from typing import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
 from threading import Event, Lock
@@ -24,11 +25,26 @@ def check_analysis_cancelled() -> None:
 
 
 class AnalysisRegistry:
-    def __init__(self):
+    def __init__(self, clock: Callable[[], float] = monotonic):
         self._lock = Lock()
+        self._clock = clock
+        self._started: deque[float] = deque()
         self._active: dict[str, Event] = {}
         # Bounded, short-lived tombstones handle cancel arriving before analyze.
         self._recent: OrderedDict[str, tuple[float, str]] = OrderedDict()
+
+    def _prune_metrics(self, now: float) -> None:
+        while self._started and self._started[0] <= now - 86400:
+            self._started.popleft()
+
+    def metrics(self) -> dict[str, int]:
+        """Admitted starts, including failed/cancelled work; resets on restart."""
+        with self._lock:
+            self._prune_metrics(self._clock())
+            return {
+                "ongoingAnalyses": len(self._active),
+                "analysesLast24Hours": len(self._started),
+            }
 
     def _prune(self):
         now = monotonic()
@@ -53,6 +69,9 @@ class AnalysisRegistry:
                 raise DuplicateAnalysis()
             event = Event()
             self._active[analysis_id] = event
+            now = self._clock()
+            self._prune_metrics(now)
+            self._started.append(now)
         token = _current_cancel.set(event)
         try:
             check_analysis_cancelled()
