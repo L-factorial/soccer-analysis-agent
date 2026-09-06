@@ -175,7 +175,6 @@ export default function HomeScreen() {
   );
   const [selectedTeamId, setSelectedTeamId] = useState("team1");
   const [setupHintDismissed, setSetupHintDismissed] = useState(false);
-  const dismissSetupHint = useCallback(() => setSetupHintDismissed(true), []);
   const [animationResponse, setAnimationResponse] = useState<AnimationResponse>(
     { duration: 0, events: [] },
   );
@@ -1288,7 +1287,6 @@ export default function HomeScreen() {
               selectedPlayerId={orientationPlayerId}
               separateBallDuringSetup={!isPlaybackReady && analysisStatus !== "loading"}
               showSetupHint={!setupHintDismissed && !isPlaybackReady && analysisStatus !== "loading" && !openSpaceTool && !orientationPlayerId}
-              onSetupHintDismiss={dismissSetupHint}
             />
             {analysisStatus === "loading" && <AnalysisOverlay />}
           </View>

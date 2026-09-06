@@ -23,31 +23,37 @@ import { OpenSpaceMarker } from "./OpenSpaceMarker";
 import { OffsideLineOverlay } from "./OffsideLineOverlay";
 import { PlayerMarker } from "./PlayerMarker";
 
-function FieldSetupHint({ configuration, onDismiss }: { configuration: FieldConfiguration; onDismiss?: () => void }) {
+function FieldSetupHint({ configuration }: { configuration: FieldConfiguration }) {
   const opacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     let disposed = false;
     let fade: Animated.CompositeAnimation | undefined;
+    let timer: ReturnType<typeof setTimeout>;
     let reducedMotion = false;
     void AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
       reducedMotion = reduced;
     }).catch(() => {});
-    const timer = setTimeout(() => {
-      fade = Animated.timing(opacity, {
-        toValue: 0, duration: reducedMotion ? 0 : 1200,
-        useNativeDriver: true, isInteraction: false,
-      });
-      fade.start(({ finished }) => {
-        if (finished && !disposed) onDismiss?.();
-      });
-    }, 3500);
+    const show = () => {
+      if (disposed) return;
+      opacity.setValue(1);
+      timer = setTimeout(() => {
+        fade = Animated.timing(opacity, {
+          toValue: 0, duration: reducedMotion ? 0 : 1200,
+          useNativeDriver: true, isInteraction: false,
+        });
+        fade.start(({ finished }) => {
+          if (finished && !disposed) timer = setTimeout(show, 2000);
+        });
+      }, 3500);
+    };
+    show();
     return () => {
       disposed = true;
       clearTimeout(timer);
       fade?.stop();
     };
-  }, [opacity, onDismiss]);
+  }, [opacity]);
 
   return (
     <View style={styles.setupHint}>
@@ -84,7 +90,6 @@ type FieldCanvasProps = {
   selectedOpenSpaceId?: string | null;
   selectedPlayerId?: string | null;
   showSetupHint?: boolean;
-  onSetupHintDismiss?: () => void;
   separateBallDuringSetup?: boolean;
 };
 
@@ -107,7 +112,6 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
       selectedOpenSpaceId,
       selectedPlayerId,
       showSetupHint = false,
-      onSetupHintDismiss,
       separateBallDuringSetup = false,
     },
     ref,
@@ -198,7 +202,7 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
             }
           />
         ))}
-        {showSetupHint && <FieldSetupHint configuration={configuration} onDismiss={onSetupHintDismiss} />}
+        {showSetupHint && <FieldSetupHint configuration={configuration} />}
       </FieldSurface>
     );
   },
