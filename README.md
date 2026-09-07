@@ -123,15 +123,9 @@ model or consuming generation quota. Shared links and cached analysis responses
 include saved narration; the UI commentary toggle controls its display. Failed
 generation is not cached, and commentary disappears with its evicted solution.
 
-When Commentary is on, choose English or Nepali. Nepali uses native Devanagari
-and the user-provided football expressions, tied to supported events rather than
-inserted into every phase. Requests use `language: "en" | "ne"` (English by
-default). Each plan's `commentaryByLanguage` stores both tracks independently;
-the legacy `commentary` field remains English. Switching language reuses stored
-text without rerunning tactical analysis. Browser speech prefers a Nepali voice
-if installed. If no Nepali voice is available, the UI explicitly offers text
-only instead of speaking Nepali with an English voice. Older Romanized Nepali
-cache entries are regenerated in Devanagari when Nepali is requested again.
+Commentary is English-only and uses an English browser speech voice. Saved
+English narration remains available for the primary plan and each alternative.
+The API accepts only `language: "en"` (or an omitted language).
 
 The default database is `backend/data/solution_cache/solutions.sqlite3`, ignored
 by Git. Override it with `SOCCER_SOLUTION_CACHE_PATH`. Docker Compose mounts a

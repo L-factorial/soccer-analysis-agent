@@ -64,24 +64,19 @@ def _commentary_input() -> CommentarySimulationInput:
 
 
 class CommentaryTests(unittest.TestCase):
-    @patch.dict(os.environ, {"SOCCER_COMMENTARY_ENABLED": "true", "OPENAI_API_KEY": "test-key"}, clear=False)
-    @patch("app.commentary.service.OpenAI")
-    def test_nepali_prompt_and_language_preserve_phase_timing(self, client):
-        client.return_value.responses.parse.return_value.output_parsed = GeneratedCommentary(
-            title="Ramro chaal", summary="Pass bata mauka banayo.",
-            phases=(GeneratedPhaseCommentary(phase_id="phase-1", text="Aaha kya ramro! Pass nikale!"),),
-        )
-        result = generate_commentary(_commentary_input(), self.submission, language="ne")
-        self.assertEqual(result.language, "ne")
-        self.assertEqual(result.script, "devanagari")
-        self.assertEqual((result.cues[0].start_time, result.cues[0].end_time), (1, 3))
-        prompt = client.return_value.responses.parse.call_args.kwargs['input'][0]['content']
-        for phrase in ('Romanized Nepali', 'Chal chal bhai gari diyo', 'Jhin jhin gari diyo', 'Aaha kya ramro', 'Defense lai kya jhur vo', 'GhoKre Thyaak gari diyo'):
-            self.assertIn(phrase, prompt)
-        self.assertIn('never a missed shot', prompt)
-
     def setUp(self) -> None:
         self.submission = FieldSubmission.model_validate(valid_payload())
+
+    def test_only_english_language_is_accepted(self):
+        payload = {
+            "fieldSubmission": valid_payload(),
+            "animationResponse": _response().model_dump(by_alias=True),
+            "commentaryEnabled": True,
+        }
+        self.assertEqual(CommentaryRequest.model_validate(payload).language, "en")
+        self.assertEqual(CommentaryRequest.model_validate({**payload, "language": "en"}).language, "en")
+        with self.assertRaises(ValidationError):
+            CommentaryRequest.model_validate({**payload, "language": "ne"})
 
     @patch("app.api.field_configurations.generate_commentary")
     def test_endpoint_requires_explicit_opt_in(self, generate: Mock) -> None:

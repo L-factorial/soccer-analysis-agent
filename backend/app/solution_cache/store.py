@@ -84,17 +84,8 @@ class SolutionCache:
             response = AnimationResponse.model_validate_json(row[0])
             def merge(plan):
                 nonlocal commentary
-                tracks = dict(plan.commentary_by_language)
-                if plan.commentary is not None:
-                    tracks.setdefault(plan.commentary.language, plan.commentary)
-                existing = tracks.get(commentary.language)
-                if existing is not None and existing.script == commentary.script:
-                    commentary = existing
-                tracks[commentary.language] = commentary
-                return plan.model_copy(update={
-                    "commentary_by_language": tracks,
-                    "commentary": tracks.get("en"),
-                })
+                commentary = plan.commentary or commentary
+                return plan.model_copy(update={"commentary": commentary})
             if plan_id == "requested":
                 response = merge(response)
             else:

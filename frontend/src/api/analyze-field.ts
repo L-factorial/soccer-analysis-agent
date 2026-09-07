@@ -5,7 +5,6 @@ import {
   createFieldSubmission,
   FieldConfiguration,
   FieldSubmission,
-  CommentaryLanguage,
 } from "../models";
 
 const API_BASE_URL = (
@@ -69,7 +68,6 @@ export async function generateCommentary(
   signal?: AbortSignal,
   fieldHash?: string | null,
   planId = "requested",
-  language: CommentaryLanguage = "en",
 ): Promise<CommentaryTrack> {
   if (!commentaryEnabled) {
     throw new Error("Enable commentary before requesting generation.");
@@ -83,7 +81,6 @@ export async function generateCommentary(
         commentaryEnabled,
         fieldHash,
         planId,
-        language,
         fieldSubmission: createFieldSubmission(configuration, tacticalInstruction),
         // Never send an earlier commentary track back to the model.
         animationResponse: { ...animationResponse, commentary: undefined },

@@ -11,12 +11,8 @@ type CommentaryPanelProps = {
   playbackStatus: AnimationStatus;
 };
 
-function preferredBroadcastVoice(language = "en"): SpeechSynthesisVoice | undefined {
+function preferredBroadcastVoice(): SpeechSynthesisVoice | undefined {
   const voices = globalThis.speechSynthesis.getVoices();
-  if (language === "ne") {
-    const nepali = voices.find((voice) => voice.lang.toLowerCase().startsWith("ne"));
-    return nepali;
-  }
   const englishVoices = voices.filter((voice) =>
     voice.lang.toLowerCase().startsWith("en"),
   );
@@ -69,8 +65,6 @@ export function CommentaryPanel({
     globalThis.speechSynthesis.addEventListener("voiceschanged", update);
     return () => globalThis.speechSynthesis.removeEventListener("voiceschanged", update);
   }, [speechAvailable]);
-  const missingNepaliVoice = commentary?.language === "ne" &&
-    (!speechAvailable || !preferredBroadcastVoice("ne"));
   const activeCue = commentary?.cues.find(
     (cue) => playbackSeconds >= cue.startTime && playbackSeconds < cue.endTime,
   );
@@ -86,7 +80,6 @@ export function CommentaryPanel({
       narrationStarted.current ||
       !commentary ||
       !speechAvailable
-      || missingNepaliVoice
     ) {
       return;
     }
@@ -102,7 +95,7 @@ export function CommentaryPanel({
     // phase-sized speech items. Em dashes preserve a light broadcast pause.
     const continuousScript = remainingCues.map((cue) => cue.text).join(" — ");
     const utterance = new SpeechSynthesisUtterance(continuousScript);
-    const voice = preferredBroadcastVoice(commentary?.language);
+    const voice = preferredBroadcastVoice();
     if (voice) {
       utterance.voice = voice;
       utterance.lang = voice.lang;
@@ -114,7 +107,7 @@ export function CommentaryPanel({
     utterance.pitch = 0.94;
     utterance.volume = 1;
     globalThis.speechSynthesis.speak(utterance);
-  }, [commentary, playbackSeconds, playbackStatus, speechAvailable, missingNepaliVoice, voiceRevision]);
+  }, [commentary, playbackSeconds, playbackStatus, speechAvailable, voiceRevision]);
 
   useEffect(() => {
     // A user Pause or Reset is an explicit stop. Natural completion is not:
@@ -155,14 +148,13 @@ export function CommentaryPanel({
         style={[styles.badge, commentary && styles.badgeReady]}
       >
         <Text style={[styles.badgeText, commentary && styles.badgeTextReady]}>
-          {loading ? "Commentary …" : missingNepaliVoice ? "Nepali voice unavailable · Text ready" : "Commentary ✓"}
+          {loading ? "Commentary …" : "Commentary ✓"}
         </Text>
       </Pressable>
       {showTooltip && commentary && (
         <View style={[styles.tooltip, { pointerEvents: "none" }]}>
           <Text style={styles.eyebrow}>AI MATCH COMMENTARY · READY</Text>
           <Text style={styles.title}>{commentary.title}</Text>
-          {missingNepaliVoice && <Text style={styles.note}>This browser has no Nepali speech voice. Nepali text is available; English pronunciation is disabled.</Text>}
           <Text style={styles.summary}>{commentary.summary}</Text>
           {activeCue && <Text style={styles.activeCue}>{activeCue.text}</Text>}
           {!speechAvailable && (

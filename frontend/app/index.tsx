@@ -34,8 +34,6 @@ import {
 } from "../src/features/animation-playback";
 import {
   AnimationResponse,
-  CommentaryLanguage,
-  CommentaryTrack,
   AlternativePlan,
   createFieldConfiguration,
   FIELD_LENGTH_CM,
@@ -66,14 +64,7 @@ function alternativeResponse(plan: AlternativePlan): AnimationResponse {
     diagnostics: plan.diagnostics,
     phaseSnapshots: plan.phaseSnapshots,
     commentary: plan.commentary,
-    commentaryByLanguage: plan.commentaryByLanguage,
   };
-}
-
-function commentaryFor(plan: AnimationResponse | AlternativePlan | null | undefined, language: CommentaryLanguage): CommentaryTrack | undefined {
-  const track = plan?.commentaryByLanguage?.[language]
-    ?? ((plan?.commentary?.language ?? "en") === language ? plan?.commentary : undefined);
-  return language === "ne" && track?.script !== "devanagari" ? undefined : track;
 }
 
 type ChoiceButtonProps = {
@@ -201,8 +192,6 @@ export default function HomeScreen() {
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>("idle");
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [commentaryEnabled, setCommentaryEnabled] = useState(false);
-  const [commentaryLanguage, setCommentaryLanguage] = useState<CommentaryLanguage>("en");
-  const commentaryLanguageRef = useRef<CommentaryLanguage>("en");
   const commentaryEnabledRef = useRef(false);
   const commentaryAbortController = useRef<AbortController | null>(null);
   const [commentaryStatuses, setCommentaryStatuses] = useState<
@@ -360,8 +349,8 @@ export default function HomeScreen() {
       selectedPlanIdRef.current = "requested";
       setSelectedPlanId("requested");
       setCommentaryStatuses(Object.fromEntries([
-        ["requested", commentaryFor(saved.animationResponse, commentaryLanguageRef.current) ? "ready" : "idle"],
-        ...(saved.animationResponse.alternativePlans ?? []).map((plan) => [plan.id, commentaryFor(plan, commentaryLanguageRef.current) ? "ready" : "idle"]),
+        ["requested", saved.animationResponse.commentary ? "ready" : "idle"],
+        ...(saved.animationResponse.alternativePlans ?? []).map((plan) => [plan.id, plan.commentary ? "ready" : "idle"]),
       ]) as Record<string, CommentaryStatus>);
       setAnalysisStatus("success");
     }).catch((error) => {
@@ -393,7 +382,7 @@ export default function HomeScreen() {
     [],
   );
 
-  function startCommentary(response: AnimationResponse, language = commentaryLanguageRef.current) {
+  function startCommentary(response: AnimationResponse) {
     commentaryAbortController.current?.abort();
     const controller = new AbortController();
     commentaryAbortController.current = controller;
@@ -406,13 +395,13 @@ export default function HomeScreen() {
     ];
     setCommentaryStatuses(
       Object.fromEntries(commentaryPlans.map(({ id, response: plan }) =>
-        [id, commentaryFor(plan, language) ? "ready" : "loading"],
+        [id, plan.commentary ? "ready" : "loading"],
       )),
     );
     // Each selectable plan owns an independent asynchronous commentary
     // request. One failure never blocks simulation or the other plans.
     for (const commentaryPlan of commentaryPlans) {
-      if (commentaryFor(commentaryPlan.response, language)) continue;
+      if (commentaryPlan.response.commentary) continue;
       void generateCommentary(
         fieldConfiguration,
         commentaryPlan.response,
@@ -421,19 +410,18 @@ export default function HomeScreen() {
         controller.signal,
         response.fieldHash,
         commentaryPlan.id,
-        language,
       )
         .then((commentary) => {
           if (controller.signal.aborted) return;
           setPrimaryPlanResponse((current) => {
             if (!current) return current;
             if (commentaryPlan.id === "requested") {
-              return { ...current, commentaryByLanguage: { ...current.commentaryByLanguage, [language]: commentary } };
+              return { ...current, commentary };
             }
             return {
               ...current,
               alternativePlans: current.alternativePlans?.map((plan) =>
-                plan.id === commentaryPlan.id ? { ...plan, commentaryByLanguage: { ...plan.commentaryByLanguage, [language]: commentary } } : plan,
+                plan.id === commentaryPlan.id ? { ...plan, commentary } : plan,
               ),
             };
           });
@@ -1053,22 +1041,6 @@ export default function HomeScreen() {
                   Commentary: {commentaryEnabled ? "On" : "Off"}
                 </Text>
               </Pressable>}
-              {commentaryEnabled && (["en", "ne"] as const).map((language) => (
-                <Pressable key={language} accessibilityRole="button"
-                  accessibilityLabel={`${language === "en" ? "English" : "Nepali"} commentary`}
-                  accessibilityState={{ selected: commentaryLanguage === language }}
-                  style={[styles.commentaryToggle, commentaryLanguage === language && styles.commentaryToggleEnabled]}
-                  onPress={() => {
-                    if (commentaryLanguage === language) return;
-                    setCommentaryLanguage(language);
-                    commentaryLanguageRef.current = language;
-                    commentaryAbortController.current?.abort();
-                    setCommentaryStatuses({});
-                    if (primaryPlanResponse && analysisStatus === "success") startCommentary(primaryPlanResponse, language);
-                  }}>
-                  <Text style={styles.commentaryToggleText}>{language === "en" ? "English" : "Nepali"}</Text>
-                </Pressable>
-              ))}
               {!isPlaybackReady ? (
                 <Pressable
                   accessibilityRole="button"
@@ -1233,7 +1205,7 @@ export default function HomeScreen() {
                 <Text style={styles.resetButtonText}>New field</Text>
               </Pressable>
               {commentaryEnabled && <CommentaryPanel
-                commentary={commentaryFor(selectedPlanId === "requested" ? primaryPlanResponse : selectedAlternative, commentaryLanguage)}
+                commentary={selectedPlanId === "requested" ? primaryPlanResponse?.commentary : selectedAlternative?.commentary}
                 loading={commentaryStatuses[selectedPlanId] === "loading"}
                 playbackSeconds={playbackSeconds}
                 playbackStatus={session.status}

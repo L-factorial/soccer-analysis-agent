@@ -58,7 +58,6 @@ def _commentary_input(
 def generate_commentary(
     response: CommentarySimulationInput,
     submission: FieldSubmission,
-    language: str = "en",
 ) -> CommentaryTrack | None:
     """Generate a read-only track or return ``None`` when unavailable."""
     config = CommentaryConfig.from_environment()
@@ -120,24 +119,7 @@ def generate_commentary(
                         "and summary should sound like a broadcast highlight caption. "
                         "Describe only supplied actions: never invent a player, event, "
                         "outcome, score, crowd reaction, or timestamp."
-                    ) + (
-                        " Generate the title, summary, and every cue in natural spoken Nepali "
-                        "written in Devanagari, NOT Romanized Nepali. Use natural Nepali grammar "
-                        "and Nepali football terminology suitable for a native Nepali speech voice. "
-                        "The Latin spellings below express the user's preferred phrases: render "
-                        "them in Devanagari, such as 'आहा, क्या राम्रो!' and 'डिफेन्सलाई क्या झुर भो!' "
-                        "Keep internal phase IDs unchanged. "
-                        "For Nepali, the following user-approved expressions are exceptions to the "
-                        "catchphrase restriction above. Use sparingly, only when supported by the events: "
-                        "'Chal chal bhai gari diyo!' for a sharp cut or skill; "
-                        "'Jhin jhin gari diyo!' when an attacker outsmarts the defense; "
-                        "'Aaha kya ramro!' for a beautiful move or goal; "
-                        "'Defense lai kya jhur vo!' as playful sympathy for beaten defenders; "
-                        "'GhoKre Thyaak gari diyo!' ONLY for an extraordinary scored goal, never "
-                        "a missed shot or routine finish. Do not invent skill moves or extraordinary "
-                        "finishes to justify these phrases. At most one expression per phase; "
-                        "do not force every phrase into a short play. Preserve names, IDs and word budgets."
-                        if language == "ne" else " Generate all commentary in English."
+                        " Generate all commentary in English."
                     ),
                 },
                 {"role": "user", "content": _commentary_input(response, submission)},
@@ -168,8 +150,6 @@ def generate_commentary(
         if not cues:
             return None
         track = CommentaryTrack(
-            language=language,
-            script="devanagari" if language == "ne" else "latin",
             title=generated.title,
             summary=generated.summary,
             cues=tuple(sorted(cues, key=lambda cue: cue.start_time)),

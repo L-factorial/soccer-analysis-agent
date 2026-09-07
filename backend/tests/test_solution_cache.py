@@ -1,6 +1,9 @@
+from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import uuid4
+import json
+import sqlite3
 import unittest
 from unittest.mock import patch
 
@@ -17,19 +20,28 @@ from test_shooting import shooting_state
 
 
 class SolutionCacheTests(unittest.TestCase):
-    def test_commentary_languages_survive_independent_updates(self):
+    def test_legacy_cache_keeps_english_and_omits_language_variants(self):
+        english = {"title": "English", "summary": "Saved narration", "cues": [],
+                   "language": "en", "script": "latin"}
+        nepali = {**english, "title": "Legacy Nepali", "language": "ne", "script": "devanagari"}
+        legacy_plan = {"duration": 1, "events": [], "commentary": english,
+                       "commentary_by_language": {"en": english, "ne": nepali}}
+        legacy = {**legacy_plan, "alternative_plans": [
+            {**legacy_plan, "id": "alt", "label": "Alternative", "reason": "Different route"}
+        ]}
         with TemporaryDirectory() as directory:
-            path = Path(directory) / 'solutions.sqlite3'
+            path = Path(directory) / "solutions.sqlite3"
             cache = SolutionCache(path)
-            submission = FieldSubmission.model_validate(valid_payload())
-            cache.put('field', submission, AnimationResponse(duration=0, events=()))
-            english = CommentaryTrack(title='English', summary='A fine goal', cues=())
-            nepali = CommentaryTrack(language='ne', script='devanagari', title='नेपाली', summary='आहा, क्या राम्रो!', cues=())
-            cache.save_commentary('field', 'requested', english)
-            cache.save_commentary('field', 'requested', nepali)
-            restored = SolutionCache(path).get('field')[1]
-            self.assertEqual(restored.commentary, english)
-            self.assertEqual(restored.commentary_by_language, {'en': english, 'ne': nepali})
+            cache.put("saved", FieldSubmission.model_validate(valid_payload()),
+                      AnimationResponse(duration=1, events=()))
+            with closing(sqlite3.connect(path)) as connection, connection:
+                connection.execute("UPDATE solutions SET response = ? WHERE field_hash = ?",
+                                   (json.dumps(legacy), "saved"))
+            restored = cache.get("saved")[1]
+            self.assertEqual(restored.commentary.title, "English")
+            self.assertEqual(restored.alternative_plans[0].commentary.title, "English")
+            self.assertNotIn("Legacy Nepali", restored.model_dump_json())
+            self.assertNotIn("commentaryByLanguage", restored.model_dump_json(by_alias=True))
 
     def test_hash_normalizes_order_and_excludes_request_id(self):
         payload = valid_payload()
@@ -87,29 +99,6 @@ class SolutionCacheTests(unittest.TestCase):
 
 
 class SharedSolutionHTTPTests(unittest.IsolatedAsyncioTestCase):
-    async def test_nepali_request_does_not_reuse_english_track(self):
-        submission = FieldSubmission.model_validate(valid_payload())
-        field_hash = configuration_hash(submission)
-        english = CommentaryTrack(title='English', summary='English call', cues=())
-        nepali = CommentaryTrack(language='ne', script='devanagari', title='नेपाली', summary='आहा, क्या राम्रो!', cues=())
-        with TemporaryDirectory() as directory:
-            cache = SolutionCache(Path(directory) / 'solutions.sqlite3')
-            cache.put(field_hash, submission, AnimationResponse(duration=1, events=(), commentary=english, commentary_by_language={'ne': nepali.model_copy(update={'script': 'latin'})}))
-            body = {'commentaryEnabled': True, 'fieldHash': field_hash, 'language': 'ne',
-                    'fieldSubmission': submission.model_dump(mode='json', by_alias=True),
-                    'animationResponse': {'duration': 1, 'events': []}}
-            with patch('app.api.field_configurations.solution_cache', cache), patch('app.api.field_configurations.rate_limiter.reserve_commentary'), patch('app.api.field_configurations.generate_commentary', return_value=nepali) as generate:
-                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test/api/v1/field-configurations/') as client:
-                    for _ in range(2):
-                        response = await client.post('commentary', json=body)
-                        self.assertEqual(response.status_code, 200, response.text)
-                        self.assertEqual(response.json()['language'], 'ne')
-                    generate.assert_called_once()
-                    self.assertEqual(generate.call_args.kwargs['language'], 'ne')
-                    response = await client.post('commentary', json={**body, 'language': 'en'})
-                    self.assertEqual(response.json()['title'], 'English')
-                    self.assertEqual((await client.post('commentary', json={**body, 'language': 'unknown'})).status_code, 422)
-
     async def test_commentary_is_saved_per_plan_and_reused_without_generation(self):
         submission = FieldSubmission.model_validate(valid_payload())
         field_hash = configuration_hash(submission)

@@ -207,7 +207,6 @@ class AlternativePlan(BaseModel):
     events: tuple[AnimationEvent, ...]
     diagnostics: PlannerDiagnostics | None = None
     commentary: "CommentaryTrack | None" = None
-    commentary_by_language: "dict[str, CommentaryTrack]" = Field(default_factory=dict, serialization_alias="commentaryByLanguage")
     phase_snapshots: tuple[dict, ...] = Field(
         default=(), serialization_alias="phaseSnapshots"
     )
@@ -225,8 +224,6 @@ class CommentaryCue(BaseModel):
 class CommentaryTrack(BaseModel):
     """Optional narration that cannot alter the authoritative event timeline."""
     title: str
-    language: Literal["en", "ne"] = "en"
-    script: Literal["latin", "devanagari"] = "latin"
     summary: str
     cues: tuple[CommentaryCue, ...]
 
@@ -247,4 +244,3 @@ class AnimationResponse(BaseModel):
         default=(), serialization_alias="phaseSnapshots"
     )
     commentary: CommentaryTrack | None = None
-    commentary_by_language: dict[str, CommentaryTrack] = Field(default_factory=dict, serialization_alias="commentaryByLanguage")

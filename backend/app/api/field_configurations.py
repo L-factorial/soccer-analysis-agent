@@ -105,7 +105,7 @@ class CommentaryRequest(BaseModel):
     commentary_enabled: bool = Field(default=False, alias="commentaryEnabled", strict=True)
     field_hash: str | None = Field(default=None, alias="fieldHash", pattern=r"^[0-9a-f]{64}$")
     plan_id: str = Field(default="requested", alias="planId")
-    language: Literal["en", "ne"] = "en"
+    language: Literal["en"] = "en"
     field_submission: FieldSubmission = Field(alias="fieldSubmission")
     # This is the camelCase representation previously returned to the frontend,
     # not an internal AnimationResponse reconstructed from snake_case fields.
@@ -270,12 +270,8 @@ def create_commentary(request: CommentaryRequest) -> CommentaryTrack:
         )
         if plan is None:
             raise HTTPException(status_code=404, detail="Saved plan not found.")
-        cached_track = plan.commentary_by_language.get(request.language)
-        if cached_track is None and plan.commentary is not None and plan.commentary.language == request.language:
-            cached_track = plan.commentary
-        if cached_track is not None:
-            if request.language != "ne" or cached_track.script == "devanagari":
-                return cached_track
+        if plan.commentary is not None:
+            return plan.commentary
         # Narrate the authoritative saved plan, not a client-supplied timeline.
         simulation = CommentarySimulationInput.model_validate(plan.model_dump(mode="json", by_alias=True))
     try:
@@ -285,7 +281,6 @@ def create_commentary(request: CommentaryRequest) -> CommentaryTrack:
     commentary = generate_commentary(
         simulation,
         submission,
-        **({"language": request.language} if request.language != "en" else {}),
     )
     if commentary is None:
         raise HTTPException(

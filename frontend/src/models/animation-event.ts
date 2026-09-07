@@ -144,7 +144,6 @@ export type AnimationResponse = {
   alternativePlans?: AlternativePlan[];
   phaseSnapshots?: PhaseSnapshot[];
   commentary?: CommentaryTrack;
-  commentaryByLanguage?: Partial<Record<CommentaryLanguage, CommentaryTrack>>;
 };
 
 export type CommentaryCue = {
@@ -155,11 +154,8 @@ export type CommentaryCue = {
   text: string;
 };
 
-export type CommentaryLanguage = "en" | "ne";
 
 export type CommentaryTrack = {
-  language?: CommentaryLanguage;
-  script?: "latin" | "devanagari";
   title: string;
   summary: string;
   cues: CommentaryCue[];
@@ -207,5 +203,4 @@ export type AlternativePlan = {
   diagnostics?: PlannerDiagnostics;
   phaseSnapshots?: PhaseSnapshot[];
   commentary?: CommentaryTrack;
-  commentaryByLanguage?: Partial<Record<CommentaryLanguage, CommentaryTrack>>;
 };
