@@ -1347,7 +1347,10 @@ export default function HomeScreen() {
               accessibilityLabel="Cancel full-screen playback"
               onPress={pause}
               hitSlop={8}
-              style={styles.fullscreenCancel}
+              style={({ pressed }) => [
+                styles.fullscreenCancel,
+                pressed && styles.fullscreenCancelPressed,
+              ]}
             >
               <Text style={styles.fullscreenCancelText}>×</Text>
             </Pressable>
@@ -1370,21 +1373,24 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
   },
   fullscreenCancel: {
-    backgroundColor: "transparent",
+    backgroundColor: "rgba(10, 30, 20, 0.12)",
+    borderColor: "rgba(255, 255, 255, 0.18)",
+    borderWidth: 1,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    width: 28,
-    height: 28,
+    width: 32,
+    height: 32,
     margin: 12,
   },
+  fullscreenCancelPressed: {
+    backgroundColor: "rgba(10, 30, 20, 0.32)",
+  },
   fullscreenCancelText: {
-    color: "#FFFFFF",
+    color: "rgba(255, 255, 255, 0.72)",
     fontSize: 24,
     lineHeight: 28,
-    fontWeight: "700",
-    textShadowColor: "rgba(0,0,0,0.65)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    fontWeight: "400",
   },
   safeArea: {
     backgroundColor: colors.canvas,
