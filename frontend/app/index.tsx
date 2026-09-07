@@ -1318,7 +1318,7 @@ export default function HomeScreen() {
               hitSlop={8}
               style={styles.fullscreenCancel}
             >
-              <Text style={styles.fullscreenCancelText}>Cancel ×</Text>
+              <Text style={styles.fullscreenCancelText}>×</Text>
             </Pressable>
           </SafeAreaView>
         </View>
@@ -1339,15 +1339,22 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
   },
   fullscreenCancel: {
-    backgroundColor: "rgba(8, 28, 19, 0.9)",
-    borderColor: "rgba(255,255,255,0.6)",
-    borderWidth: 1,
-    borderRadius: 18,
+    backgroundColor: "transparent",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 28,
+    height: 28,
     margin: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
   },
-  fullscreenCancelText: { color: "#FFFFFF", fontSize: 12, fontWeight: "700" },
+  fullscreenCancelText: {
+    color: "#FFFFFF",
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: "700",
+    textShadowColor: "rgba(0,0,0,0.65)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
   safeArea: {
     backgroundColor: colors.canvas,
     flex: 1,
