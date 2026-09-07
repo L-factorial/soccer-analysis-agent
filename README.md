@@ -115,8 +115,10 @@ OPENAI_API_KEY=your-key
 ```
 
 Restart the backend after changing these settings. Analysis returns the
-simulation first while a second request generates commentary. When commentary
-arrives, playback resets; press **Play** to hear phase-aligned narration. Pause
+simulation first while a second request generates commentary. Commentary arriving
+during playback joins from the current phase without resetting the animation.
+Narration uses normal speaking speed at every animation playback speed; it may
+continue after the animation ends and full-screen playback closes. Pause
 or Reset also stops speech. The spoken prototype currently uses the browser
 speech engine and is therefore web-only.
 

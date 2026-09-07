@@ -350,14 +350,8 @@ export default function HomeScreen() {
               ),
             };
           });
-          if (selectedPlanIdRef.current === commentaryPlan.id) {
-            pause();
-            reset();
-            setAnimationResponse({
-              ...commentaryPlan.response,
-              commentary,
-            });
-          }
+          // Commentary is separate from the simulation response: receiving it
+          // must not reset playback or dismiss the full-screen pitch.
           setCommentaryStatuses((current) => ({
             ...current,
             [commentaryPlan.id]: "ready",
@@ -1128,11 +1122,12 @@ export default function HomeScreen() {
                 <Text style={styles.resetButtonText}>New field</Text>
               </Pressable>
               {commentaryEnabled && <CommentaryPanel
-                commentary={animationResponse.commentary}
+                commentary={selectedPlanId === "requested"
+                  ? primaryPlanResponse?.commentary
+                  : selectedAlternative?.commentary}
                 loading={commentaryStatuses[selectedPlanId] === "loading"}
                 playbackSeconds={playbackSeconds}
                 playbackStatus={session.status}
-                playbackSpeed={playbackSpeed}
               />}
                 </>
               )}

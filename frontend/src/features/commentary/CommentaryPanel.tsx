@@ -9,7 +9,6 @@ type CommentaryPanelProps = {
   loading?: boolean;
   playbackSeconds: number;
   playbackStatus: AnimationStatus;
-  playbackSpeed?: number;
 };
 
 function preferredBroadcastVoice(): SpeechSynthesisVoice | undefined {
@@ -52,7 +51,6 @@ export function CommentaryPanel({
   loading = false,
   playbackSeconds,
   playbackStatus,
-  playbackSpeed = 1.5,
 }: CommentaryPanelProps) {
   const narrationStarted = useRef(false);
   const [showTooltip, setShowTooltip] = useState(false);
@@ -63,11 +61,6 @@ export function CommentaryPanel({
   const activeCue = commentary?.cues.find(
     (cue) => playbackSeconds >= cue.startTime && playbackSeconds < cue.endTime,
   );
-
-  useEffect(() => {
-    if (speechAvailable) globalThis.speechSynthesis.cancel();
-    narrationStarted.current = false;
-  }, [playbackSpeed, speechAvailable]);
 
   useEffect(() => {
     if (
@@ -97,13 +90,12 @@ export function CommentaryPanel({
     } else {
       utterance.lang = "en-GB";
     }
-    // Classic radio delivery is brisk but intelligible, with a grounded vocal
-    // register and enough pace to carry continuous descriptive play-by-play.
-    utterance.rate = 1.03 * playbackSpeed;
+    // Narration stays at the normal speaking rate, independent of video speed.
+    utterance.rate = 1;
     utterance.pitch = 0.94;
     utterance.volume = 1;
     globalThis.speechSynthesis.speak(utterance);
-  }, [commentary, playbackSeconds, playbackStatus, playbackSpeed, speechAvailable]);
+  }, [commentary, playbackSeconds, playbackStatus, speechAvailable]);
 
   useEffect(() => {
     // A user Pause or Reset is an explicit stop. Natural completion is not:
