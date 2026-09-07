@@ -14,11 +14,12 @@ import {
 export function useAnimationSession(
   sourceConfiguration: FieldConfiguration,
   response: AnimationResponse,
+  playbackSpeed = 1.5,
 ) {
   const [session, setSession] = useState<AnimationSession>(() =>
     createAnimationSession(sourceConfiguration, response),
   );
-  const frameIntervalMilliseconds = 1_000 / ANIMATION_FRAMES_PER_SECOND;
+
 
   useEffect(() => {
     setSession(createAnimationSession(sourceConfiguration, response));
@@ -29,14 +30,24 @@ export function useAnimationSession(
       return;
     }
 
-    const intervalId = setInterval(() => {
-      setSession((current) =>
-        advanceAnimationSession(current, current.currentTime + 1),
-      );
-    }, frameIntervalMilliseconds);
-
-    return () => clearInterval(intervalId);
-  }, [frameIntervalMilliseconds, session.status]);
+    let lastTime = performance.now();
+    let pendingFrames = 0;
+    let frameId: number;
+    const tick = (now: number) => {
+      pendingFrames += (now - lastTime) * ANIMATION_FRAMES_PER_SECOND * playbackSpeed / 1000;
+      lastTime = now;
+      const frames = Math.floor(pendingFrames);
+      pendingFrames -= frames;
+      if (frames > 0) {
+        setSession((current) => current.status === "playing"
+          ? advanceAnimationSession(current, current.currentTime + frames)
+          : current);
+      }
+      frameId = requestAnimationFrame(tick);
+    };
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
+  }, [playbackSpeed, session.status, response, sourceConfiguration]);
 
   const play = useCallback(() => {
     setSession((current) => {

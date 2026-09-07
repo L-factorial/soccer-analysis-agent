@@ -393,18 +393,20 @@ export function advanceAnimationSession(
     totalFrames,
     Math.max(0, Math.floor(requestedFrame)),
   );
-  const isNextFrame = currentFrame === session.currentTime + 1;
-  const animatedConfiguration = isNextFrame
-    ? advanceConfigurationOneFrame(
-        session.animatedConfiguration,
-        eventsActiveAtFrame(session.response.events, currentFrame),
-        currentFrame,
-      )
-    : configurationAtFrame(
-        session.sourceConfiguration,
-        session.response.events,
-        currentFrame,
+  let animatedConfiguration = session.animatedConfiguration;
+  if (currentFrame > session.currentTime) {
+    // Process every simulation step, including instantaneous actions, while
+    // rendering only once. Never replay the whole timeline to catch up.
+    for (let frame = session.currentTime + 1; frame <= currentFrame; frame += 1) {
+      animatedConfiguration = advanceConfigurationOneFrame(
+        animatedConfiguration, eventsActiveAtFrame(session.response.events, frame), frame,
       );
+    }
+  } else {
+    animatedConfiguration = configurationAtFrame(
+      session.sourceConfiguration, session.response.events, currentFrame,
+    );
+  }
 
   return {
     ...session,

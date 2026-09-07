@@ -223,9 +223,12 @@ export default function HomeScreen() {
       number: index + 1,
     }),
   );
+  const [playbackSpeed, setPlaybackSpeed] = useState(1.5);
+  const [speedMenuOpen, setSpeedMenuOpen] = useState(false);
   const { pause, play, reset, session } = useAnimationSession(
     fieldConfiguration,
     animationResponse,
+    playbackSpeed,
   );
   const displayedConfiguration = useMemo(() => {
     const profileNames = new Map(
@@ -1070,6 +1073,33 @@ export default function HomeScreen() {
                     )}
                   </View>
                 )}
+              <View style={styles.speedSelector}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Playback speed ${playbackSpeed} times`}
+                  accessibilityState={{ expanded: speedMenuOpen }}
+                  onPress={() => setSpeedMenuOpen((open) => !open)}
+                  style={styles.speedButton}
+                >
+                  <Text style={styles.speedText}>{playbackSpeed}× ▾</Text>
+                </Pressable>
+                {speedMenuOpen && (
+                  <View style={styles.speedMenu}>
+                    {[1, 1.25, 1.5].map((speed) => (
+                      <Pressable
+                        key={speed}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${speed} times speed`}
+                        accessibilityState={{ selected: playbackSpeed === speed }}
+                        onPress={() => { setPlaybackSpeed(speed); setSpeedMenuOpen(false); }}
+                        style={[styles.speedButton, playbackSpeed === speed && styles.speedSelected]}
+                      >
+                        <Text style={styles.speedText}>{speed}×</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+              </View>
               <Text style={styles.playbackTime}>
                 {playbackSeconds.toFixed(2)} / {session.response.duration}s
               </Text>
@@ -1102,6 +1132,7 @@ export default function HomeScreen() {
                 loading={commentaryStatuses[selectedPlanId] === "loading"}
                 playbackSeconds={playbackSeconds}
                 playbackStatus={session.status}
+                playbackSpeed={playbackSpeed}
               />}
                 </>
               )}
@@ -1844,6 +1875,11 @@ const styles = StyleSheet.create({
   phaseCardDetailActive: {
     color: "#D9E8DE",
   },
+  speedSelector: { position: "relative", zIndex: 110 },
+  speedButton: { paddingHorizontal: 7, paddingVertical: 6, borderRadius: 6, backgroundColor: colors.inset },
+  speedText: { color: colors.ink, fontSize: 10, fontWeight: "700" },
+  speedSelected: { backgroundColor: colors.accentSoft },
+  speedMenu: { position: "absolute", top: 29, right: 0, minWidth: 60, padding: 3, gap: 2, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 8, zIndex: 110 },
   playbackTime: {
     color: colors.muted,
     fontSize: 11,
