@@ -136,6 +136,7 @@ export type SelectedPhaseDiagnostic = {
 };
 
 export type AnimationResponse = {
+  fieldHash?: string | null;
   analysisId?: string | null;
   duration: number;
   events: AnimationEvent[];
@@ -143,6 +144,7 @@ export type AnimationResponse = {
   alternativePlans?: AlternativePlan[];
   phaseSnapshots?: PhaseSnapshot[];
   commentary?: CommentaryTrack;
+  commentaryByLanguage?: Partial<Record<CommentaryLanguage, CommentaryTrack>>;
 };
 
 export type CommentaryCue = {
@@ -153,10 +155,37 @@ export type CommentaryCue = {
   text: string;
 };
 
+export type CommentaryLanguage = "en" | "ne";
+
 export type CommentaryTrack = {
+  language?: CommentaryLanguage;
+  script?: "latin" | "devanagari";
   title: string;
   summary: string;
   cues: CommentaryCue[];
+};
+
+export type PassingTriangle = {
+  playerIds: [string, string, string];
+  vertices?: [EventTarget, EventTarget, EventTarget];
+  quality: number;
+};
+
+export type LocalMatchup = {
+  teamId: string;
+  carrierId: string;
+  center: EventTarget;
+  radius: number;
+  scenario: string;
+  attackerIds: string[];
+  defenderIds: string[];
+  goalkeeperIds: string[];
+  usableSupportIds: string[];
+  attackingValue: number;
+  numericalValue: number;
+  triangles?: PassingTriangle[];
+  triangleValue?: number;
+  value: number;
 };
 
 export type PhaseSnapshot = {
@@ -164,6 +193,9 @@ export type PhaseSnapshot = {
   phaseIndex: number;
   atTime: number;
   openSpaces: { id: string; center: EventTarget; radius: number }[];
+  localMatchup?: LocalMatchup | null;
+  localMatchupScore?: number;
+  passingTriangleScore?: number;
 };
 
 export type AlternativePlan = {
@@ -175,4 +207,5 @@ export type AlternativePlan = {
   diagnostics?: PlannerDiagnostics;
   phaseSnapshots?: PhaseSnapshot[];
   commentary?: CommentaryTrack;
+  commentaryByLanguage?: Partial<Record<CommentaryLanguage, CommentaryTrack>>;
 };

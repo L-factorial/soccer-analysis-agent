@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from app.analysis import ActionType
+from app.analysis.local_matchups import LocalMatchup, discover_local_matchup
 from app.domain import PlayerState, PossessionStatus, TargetZoneSource, is_goalkeeper
 from app.spatial import distance, distance_to_goal
 from app.phases.models import PhaseSimulationResult, TacticalPhase
@@ -43,6 +44,8 @@ class PhaseScoringPolicy:
     preferred_player_ids: tuple[str, ...] = ()
     preferred_space_ids: tuple[str, ...] = ()
     preferred_off_ball_intentions: tuple[str, ...] = ()
+    local_matchup_weight: float = 8
+    passing_triangle_weight: float = 6
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +62,10 @@ class PhaseScore:
     tactical_preference: float = 0
     sequence_adjustment: float = 0
     dribble_space: float = 0
+    local_matchup: float = 0
+    passing_triangle: float = 0
+    local_matchup_before: LocalMatchup | None = None
+    local_matchup_after: LocalMatchup | None = None
 
     @property
     def total(self) -> float:
@@ -72,6 +79,8 @@ class PhaseScore:
             + self.tactical_preference
             + self.sequence_adjustment
             + self.dribble_space
+            + self.local_matchup
+            + self.passing_triangle
         )
 
 
@@ -447,9 +456,29 @@ def _tactical_preference_score(
 def score_phase_result(
     simulation: PhaseSimulationResult,
     policy: PhaseScoringPolicy = PhaseScoringPolicy(),
+    *,
+    matchups: tuple[LocalMatchup | None, LocalMatchup | None] | None = None,
 ) -> PhaseScore:
     """Assemble the independently calculated scenarios into one phase score."""
     phase = simulation.phase
+    before, after = matchups if matchups is not None else (
+        discover_local_matchup(simulation.previous_state),
+        discover_local_matchup(simulation.resulting_state),
+    )
+    # Reward changed local advantage, not repeated occupancy of the same region.
+    # Terminal shots and possession losses remain governed by outcome scoring.
+    matchup_score = (
+        policy.local_matchup_weight * (after.value - before.value)
+        if before is not None and after is not None
+        and before.team_id == after.team_id == phase.attacking_team_id
+        else 0
+    )
+    triangle_score = (
+        policy.passing_triangle_weight * (after.triangle_value - before.triangle_value)
+        if before is not None and after is not None
+        and before.team_id == after.team_id == phase.attacking_team_id
+        else 0
+    )
     return PhaseScore(
         phase=phase,
         simulation=simulation,
@@ -461,4 +490,8 @@ def score_phase_result(
         goal=_goal_score(simulation, policy),
         tactical_preference=_tactical_preference_score(simulation, policy),
         dribble_space=_dribble_space_score(simulation, policy),
+        local_matchup=matchup_score,
+        passing_triangle=triangle_score,
+        local_matchup_before=before,
+        local_matchup_after=after,
     )

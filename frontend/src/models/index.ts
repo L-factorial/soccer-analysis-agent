@@ -28,6 +28,7 @@ export type {
   AlternativePlan,
   CommentaryCue,
   CommentaryTrack,
+  CommentaryLanguage,
   PlannerDiagnostics,
   EventTarget,
   MoveEvent,

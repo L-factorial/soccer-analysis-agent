@@ -2,6 +2,8 @@ from app.analysis import ActionType, MovementPolicy, discover_dynamic_open_space
 from app.domain import TargetZoneSource
 from app.models.animation_response import (
     AnimationResponse,
+    LocalMatchupDiagnostic,
+    PassingTriangleDiagnostic,
     MoveEvent,
     PassEvent,
     PassToSpaceEvent,
@@ -122,7 +124,7 @@ def build_phase_animation_response(
     )
     attacking_team_id = initial_state.possession.team_id
 
-    def open_space_snapshot(state, phase_id: str, phase_index: int, at_time: float):
+    def open_space_snapshot(state, phase_id: str, phase_index: int, at_time: float, matchup, matchup_score=0, triangle_score=0):
         """Serialize spaces recomputed for one selected phase boundary."""
         if attacking_team_id is None:
             spaces = ()
@@ -144,6 +146,38 @@ def build_phase_animation_response(
             "phaseId": phase_id,
             "phaseIndex": phase_index,
             "atTime": _time(at_time),
+            "localMatchup": (
+                LocalMatchupDiagnostic(
+                    team_id=matchup.team_id,
+                    carrier_id=matchup.carrier_id,
+                    center=_position(matchup.center.x, matchup.center.y),
+                    radius=matchup.radius,
+                    scenario=matchup.scenario,
+                    attacker_ids=matchup.attacker_ids,
+                    defender_ids=matchup.defender_ids,
+                    goalkeeper_ids=matchup.goalkeeper_ids,
+                    usable_support_ids=matchup.usable_support_ids,
+                    attacking_value=matchup.attacking_value,
+                    numerical_value=matchup.numerical_value,
+                    value=matchup.value,
+                    triangles=tuple(
+                        PassingTriangleDiagnostic(
+                            player_ids=triangle.player_ids,
+                            vertices=tuple(
+                                _position(state.players_by_id[player_id].position.x,
+                                          state.players_by_id[player_id].position.y)
+                                for player_id in triangle.player_ids
+                            ),
+                            quality=triangle.quality,
+                        )
+                        for triangle in matchup.triangles
+                    ),
+                    triangle_value=matchup.triangle_value,
+                ).model_dump(by_alias=True)
+                if matchup is not None else None
+            ),
+            "localMatchupScore": matchup_score,
+            "passingTriangleScore": triangle_score,
             "openSpaces": [
                 {
                     "id": space.id,
@@ -160,6 +194,7 @@ def build_phase_animation_response(
             "initial",
             0,
             0,
+            sequence.steps[0].score.local_matchup_before if sequence.steps else sequence.analyzed_state.local_matchup,
         )
     ]
 
@@ -369,6 +404,9 @@ def build_phase_animation_response(
                 phase.id,
                 phase_index,
                 phase_end,
+                step.score.local_matchup_after,
+                step.score.local_matchup,
+                step.score.passing_triangle,
             )
         )
         phase_start = phase_end

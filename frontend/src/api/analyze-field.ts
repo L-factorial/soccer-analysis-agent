@@ -4,11 +4,28 @@ import {
   PlannerDiagnostics,
   createFieldSubmission,
   FieldConfiguration,
+  FieldSubmission,
+  CommentaryLanguage,
 } from "../models";
 
 const API_BASE_URL = (
   process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000"
 ).replace(/\/$/, "");
+
+export type SharedSolution = {
+  fieldSubmission: FieldSubmission;
+  animationResponse: AnimationResponse;
+};
+
+export async function getSharedSolution(fieldHash: string, signal: AbortSignal): Promise<SharedSolution> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/field-configurations/solutions/${encodeURIComponent(fieldHash)}`, { signal });
+  if (!response.ok) {
+    throw new Error(response.status === 404
+      ? "This shared analysis is unavailable or has expired from the server’s 50-solution cache."
+      : "Unable to load this shared analysis. Please try again.");
+  }
+  return response.json();
+}
 
 type BackendErrorBody = {
   detail?: {
@@ -50,6 +67,9 @@ export async function generateCommentary(
   commentaryEnabled: boolean,
   tacticalInstruction?: string,
   signal?: AbortSignal,
+  fieldHash?: string | null,
+  planId = "requested",
+  language: CommentaryLanguage = "en",
 ): Promise<CommentaryTrack> {
   if (!commentaryEnabled) {
     throw new Error("Enable commentary before requesting generation.");
@@ -61,6 +81,9 @@ export async function generateCommentary(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         commentaryEnabled,
+        fieldHash,
+        planId,
+        language,
         fieldSubmission: createFieldSubmission(configuration, tacticalInstruction),
         // Never send an earlier commentary track back to the model.
         animationResponse: { ...animationResponse, commentary: undefined },

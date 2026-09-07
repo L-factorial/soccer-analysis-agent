@@ -92,6 +92,29 @@ class DynamicSpaceDiagnostic(BaseModel):
     radius: float
 
 
+class PassingTriangleDiagnostic(BaseModel):
+    player_ids: tuple[str, str, str] = Field(serialization_alias="playerIds")
+    vertices: tuple[Position, Position, Position]
+    quality: float = Field(ge=0, le=1)
+
+
+class LocalMatchupDiagnostic(BaseModel):
+    team_id: str = Field(serialization_alias="teamId")
+    carrier_id: str = Field(serialization_alias="carrierId")
+    center: Position
+    radius: float = Field(gt=0)
+    scenario: str
+    attacker_ids: tuple[str, ...] = Field(serialization_alias="attackerIds")
+    defender_ids: tuple[str, ...] = Field(serialization_alias="defenderIds")
+    goalkeeper_ids: tuple[str, ...] = Field(serialization_alias="goalkeeperIds")
+    usable_support_ids: tuple[str, ...] = Field(serialization_alias="usableSupportIds")
+    attacking_value: float = Field(serialization_alias="attackingValue")
+    numerical_value: float = Field(serialization_alias="numericalValue")
+    value: float
+    triangles: tuple[PassingTriangleDiagnostic, ...] = ()
+    triangle_value: float = Field(default=0, serialization_alias="triangleValue")
+
+
 class PhaseIntentionDiagnostic(BaseModel):
     """Explainable attacking/defensive assignment for a selected phase."""
     side: Literal["ATTACKING", "DEFENSIVE"]
@@ -183,6 +206,8 @@ class AlternativePlan(BaseModel):
     duration: float = Field(ge=0)
     events: tuple[AnimationEvent, ...]
     diagnostics: PlannerDiagnostics | None = None
+    commentary: "CommentaryTrack | None" = None
+    commentary_by_language: "dict[str, CommentaryTrack]" = Field(default_factory=dict, serialization_alias="commentaryByLanguage")
     phase_snapshots: tuple[dict, ...] = Field(
         default=(), serialization_alias="phaseSnapshots"
     )
@@ -200,6 +225,8 @@ class CommentaryCue(BaseModel):
 class CommentaryTrack(BaseModel):
     """Optional narration that cannot alter the authoritative event timeline."""
     title: str
+    language: Literal["en", "ne"] = "en"
+    script: Literal["latin", "devanagari"] = "latin"
     summary: str
     cues: tuple[CommentaryCue, ...]
 
@@ -207,6 +234,7 @@ class CommentaryTrack(BaseModel):
 class AnimationResponse(BaseModel):
     """Primary scheduled timeline, diagnostics, and optional alternatives."""
     analysis_id: str | None = Field(default=None, serialization_alias="analysisId")
+    field_hash: str | None = Field(default=None, serialization_alias="fieldHash")
     duration: float = Field(ge=0)
     events: tuple[AnimationEvent, ...]
     diagnostics: PlannerDiagnostics | None = None
@@ -219,3 +247,4 @@ class AnimationResponse(BaseModel):
         default=(), serialization_alias="phaseSnapshots"
     )
     commentary: CommentaryTrack | None = None
+    commentary_by_language: dict[str, CommentaryTrack] = Field(default_factory=dict, serialization_alias="commentaryByLanguage")

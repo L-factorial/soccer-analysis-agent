@@ -1,4 +1,5 @@
-import { StyleSheet, View } from "react-native";
+import { useEffect, useRef } from "react";
+import { Animated, Easing, StyleSheet, View } from "react-native";
 
 import {
   FIELD_LENGTH_CM,
@@ -19,8 +20,13 @@ type Props = {
   orientation: FieldOrientation;
 };
 
+const FILL_DOTS = Array.from({ length: 48 }, (_, index) => ({
+  x: ((index % 8) + 0.5) * 100 / 8,
+  y: (Math.floor(index / 8) + 0.5) * 100 / 6,
+}));
+
 /**
- * Draws the regular planner's computed circular spaces as a passive overlay.
+ * Highlights computed spaces with luminous dotted rectangular bounds.
  *
  * Backend coordinates and radii are centimeters. Horizontal and vertical
  * scales differ because the pitch is rectangular, and swap when the UI rotates
@@ -31,6 +37,16 @@ export function DynamicOpenSpaceOverlay({
   openSpaces,
   orientation,
 }: Props) {
+  const opacity = useRef(new Animated.Value(0.25)).current;
+  useEffect(() => {
+    const animation = Animated.loop(Animated.sequence([
+      Animated.timing(opacity, { toValue: 0.95, duration: 1100, easing: Easing.inOut(Easing.quad), useNativeDriver: false }),
+      Animated.timing(opacity, { toValue: 0.25, duration: 1100, easing: Easing.inOut(Easing.quad), useNativeDriver: false }),
+    ]));
+    animation.start();
+    return () => animation.stop();
+  }, [opacity]);
+
   const horizontalExtent =
     orientation === "horizontal" ? FIELD_LENGTH_CM : FIELD_WIDTH_CM;
   const verticalExtent =
@@ -46,18 +62,23 @@ export function DynamicOpenSpaceOverlay({
         const heightPercent = (space.radius * 2 * 100) / verticalExtent;
 
         return (
-          <View
+          <Animated.View
             key={space.id}
             style={[
-              styles.circle,
+              styles.rectangle,
               {
+                opacity,
                 height: `${heightPercent}%`,
                 left: `${center.x * 100 - widthPercent / 2}%`,
                 top: `${center.y * 100 - heightPercent / 2}%`,
                 width: `${widthPercent}%`,
               },
             ]}
-          />
+          >
+            {FILL_DOTS.map((dot, index) => (
+              <View key={index} style={[styles.dot, { left: `${dot.x}%`, top: `${dot.y}%` }]} />
+            ))}
+          </Animated.View>
         );
       })}
     </View>
@@ -68,12 +89,18 @@ const styles = StyleSheet.create({
   overlay: {
     zIndex: 3,
   },
-  circle: {
-    backgroundColor: "rgba(255, 90, 90, 0.08)",
-    borderColor: "rgba(255, 175, 175, 0.95)",
-    borderRadius: 999,
+  rectangle: {
+    backgroundColor: "transparent",
+    borderColor: "rgba(255, 235, 178, 0.98)",
+    borderRadius: 3,
     borderStyle: "dotted",
     borderWidth: 2,
+    boxShadow: "0 0 12px rgba(255, 219, 125, 0.55), inset 0 0 10px rgba(255, 219, 125, 0.16)",
     position: "absolute",
+  },
+  dot: {
+    position: "absolute", width: 2, height: 2, marginLeft: -1, marginTop: -1,
+    borderRadius: 1, backgroundColor: "rgba(255, 235, 178, 0.9)",
+    boxShadow: "0 0 5px rgba(255, 219, 125, 0.8)",
   },
 });

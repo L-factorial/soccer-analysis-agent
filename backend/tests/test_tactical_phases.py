@@ -23,7 +23,13 @@ from app.phases import (
 )
 from app.planning import analyze_game_state
 from app.spatial import distance
-from app.phases.templates import PhaseGenerationPolicy, _hold_shape_target
+from app.phases.templates import (
+    PhaseGenerationPolicy,
+    _complete_attacking_shape,
+    _hold_shape_target,
+)
+from app.phases.models import AttackingIntention, AttackingIntentionType
+from app.analysis import ActionType
 from app.builders.phase_animation_response import _merge_continuous_dribbles
 from app.validation import validate_field_submission
 from test_action_candidates import player
@@ -185,6 +191,71 @@ def shot_roles_state():
 
 
 class TacticalPhaseGenerationTests(unittest.TestCase):
+    def test_pass_shape_preserves_free_wide_lane(self) -> None:
+        analyzed = phase_state()
+        action = next(
+            action for action in analyzed.action_candidates.feasible
+            if action.action_type == ActionType.PASS_TO_PLAYER
+            and action.receiver_id == "team1-2"
+        )
+        for into_space in (False, True):
+            with self.subTest(into_space=into_space):
+                # Three players already occupy three distinct lanes. Neither
+                # a direct pass nor a receiving run should pull the wide
+                # teammate across the field into the passer's lane.
+                passer_y, wide_y = (6750, 2250) if into_space else (2250, 6750)
+                players = dict(analyzed.game_state.players_by_id)
+                for player_id, y in (
+                    ("team1-1", passer_y), ("team1-2", 4500), ("team1-3", wide_y)
+                ):
+                    players[player_id] = replace(
+                        players[player_id], position=Vector2(3000, y)
+                    )
+                state = replace(analyzed.game_state, players_by_id=MappingProxyType(players))
+                target = Vector2(4000, 4500)
+                primary = replace(
+                    action,
+                    action_type=ActionType.PASS_TO_SPACE if into_space else ActionType.PASS_TO_PLAYER,
+                    destination=target,
+                )
+                intentions = (
+                    AttackingIntention(
+                        player_id="team1-2",
+                        intention_type=AttackingIntentionType.RECEIVE_IN_SPACE,
+                        target=target,
+                        start_offset_seconds=0,
+                    ),
+                ) if into_space else ()
+                result = _complete_attacking_shape(
+                    state,
+                    tuple(players[player_id] for player_id in state.player_ids_by_team["team1"]),
+                    primary, intentions, target, PhaseGenerationPolicy(),
+                )
+                wide_run = next(item for item in result if item.player_id == "team1-3")
+                self.assertEqual(wide_run.target.y, wide_y)
+                self.assertGreater(wide_run.target.x, players["team1-3"].position.x)
+
+    def test_attacking_goalkeeper_does_not_change_outfield_shape(self) -> None:
+        original = phase_state(include_shape_attacker=True)
+        with_keeper = phase_state(
+            include_shape_attacker=True, include_attacking_goalkeeper=True
+        )
+        # Hold the candidate actions fixed to isolate off-ball decisions.
+        phases = generate_tactical_phases(
+            original.game_state, original.action_candidates.feasible
+        )
+        keeper_phases = generate_tactical_phases(
+            with_keeper.game_state, original.action_candidates.feasible
+        )
+        self.assertTrue(any(
+            intention.intention_type == AttackingIntentionType.SHIFT_WITH_PLAY
+            for phase in phases for intention in phase.attacking_intentions
+        ))
+        self.assertEqual(
+            [phase.attacking_intentions for phase in phases],
+            [phase.attacking_intentions for phase in keeper_phases],
+        )
+
     def test_shot_assigns_rebounds_rest_defense_and_distinct_block_angle(self) -> None:
         analyzed = shot_roles_state()
         phase = next(

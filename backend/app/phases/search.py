@@ -124,6 +124,7 @@ def search_tactical_phases(
             parent.analyzed_state.game_state,
             parent.analyzed_state.action_candidates.feasible,
             generation_policy,
+            analysis_policy.local_matchups,
         )
         generated += len(phases)
         for phase in phases:
@@ -152,7 +153,10 @@ def search_tactical_phases(
                 )
                 continue
             analyzed = analyze_game_state(simulation.resulting_state, analysis_policy)
-            score = score_phase_result(simulation, scoring_policy)
+            score = score_phase_result(
+                simulation, scoring_policy,
+                matchups=(parent.analyzed_state.local_matchup, analyzed.local_matchup),
+            )
             # Phase-local scoring rewards progress. Apply the history term here,
             # where the preceding selected phase is available to distinguish a
             # useful tactical change from a repeated same-carrier primitive.

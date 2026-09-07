@@ -95,6 +95,52 @@ See [container setup and GitHub image builds](deploy/README.md) for configuratio
 and validation details. GitHub Actions publishes tested images on pushes to
 `main` and deploys the tested image to the droplet with health checks and rollback.
 
+### Cached and shareable animations
+
+Each successful analysis returns a `fieldHash`. The separate `app/solution_cache`
+module hashes the validated submission (including instructions and engine cache
+version), ignoring request IDs and player/team/goal/space list ordering. Matching
+requests reuse the completed animation, alternatives, and diagnostic snapshots.
+Matching is exact after normalization; nearby coordinates are not merged.
+
+Completing analysis updates the same page's URL to
+`/?fieldHash=<hash>&planId=requested` (or an alternative's plan ID).
+Play opens the existing full-screen animation without navigating away. Opening
+or refreshing that URL restores the saved field and response into the same
+analysis page using `GET /api/v1/field-configurations/solutions/<hash>` without
+invoking the planner. Share the URL from the browser's address bar. Editing the
+field clears the saved hash until the next analysis completes. Query parameters
+keep links compatible with static hosting at the application's existing root path.
+
+SQLite persists at most 50 solutions with transactional LRU eviction. Both
+analysis reuse and link retrieval refresh recency. Evicted links display an
+unavailable message; these links are not permanent storage. Failed or cancelled
+analyses are not cached. Concurrent computations may still run independently;
+the first saved result wins. When commentary is enabled, successful narration
+is saved atomically under the same field hash, separately for the primary plan
+and each alternative. Repeated commentary requests reuse it without calling the
+model or consuming generation quota. Shared links and cached analysis responses
+include saved narration; the UI commentary toggle controls its display. Failed
+generation is not cached, and commentary disappears with its evicted solution.
+
+When Commentary is on, choose English or Nepali. Nepali uses native Devanagari
+and the user-provided football expressions, tied to supported events rather than
+inserted into every phase. Requests use `language: "en" | "ne"` (English by
+default). Each plan's `commentaryByLanguage` stores both tracks independently;
+the legacy `commentary` field remains English. Switching language reuses stored
+text without rerunning tactical analysis. Browser speech prefers a Nepali voice
+if installed. If no Nepali voice is available, the UI explicitly offers text
+only instead of speaking Nepali with an English voice. Older Romanized Nepali
+cache entries are regenerated in Devanagari when Nepali is requested again.
+
+The default database is `backend/data/solution_cache/solutions.sqlite3`, ignored
+by Git. Override it with `SOCCER_SOLUTION_CACHE_PATH`. Docker Compose mounts a
+named volume so recreating the backend preserves solutions. Bump
+`ENGINE_CACHE_VERSION` in `app/solution_cache/store.py` when engine behavior or
+cache compatibility changes; new requests then compute under new hashes.
+Links are accessible to anyone who has the URL and can reach the frontend and
+backend. Localhost links only work on the machine running the local servers.
+
 ## Planning behavior
 
 Planning uses the local rules engine, tactical phase simulation, scoring policy,

@@ -13,6 +13,7 @@ RUN groupadd --gid 10001 soccer \
 
 COPY app ./app
 COPY data/soccer_knowledge ./data/soccer_knowledge
+RUN mkdir -p /app/data/solution_cache && chown soccer:soccer /app/data/solution_cache
 
 USER soccer
 EXPOSE 8000

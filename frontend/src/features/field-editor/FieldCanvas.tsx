@@ -12,6 +12,9 @@ import {
 import { FieldConfiguration, FieldOrientation, fieldToScreenPosition } from "../../models";
 import { getBallDisplayOffset, MOBILE_PLAYER_SCALE, PLAYER_DIAMETER, PLAYER_RING_DIAMETER } from "./marker-layout";
 import { BallMarker } from "./BallMarker";
+import { LocalMatchupOverlay } from "./LocalMatchupOverlay";
+import { PassingTriangleOverlay } from "./PassingTriangleOverlay";
+import { LocalMatchup } from "../../models/animation-event";
 import {
   DynamicOpenSpace,
   DynamicOpenSpaceOverlay,
@@ -57,6 +60,7 @@ type FieldCanvasProps = {
   attackingTeamId?: string | null;
   configuration: FieldConfiguration;
   dynamicOpenSpaces?: DynamicOpenSpace[];
+  localMatchup?: LocalMatchup | null;
   orientation: FieldOrientation;
   fillViewport?: boolean;
   offsideReleaseLineX?: number | null;
@@ -80,6 +84,7 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
     {
       configuration,
       dynamicOpenSpaces = [],
+      localMatchup,
       attackingTeamId,
       orientation,
       fillViewport = false,
@@ -127,6 +132,12 @@ export const FieldCanvas = forwardRef<View, FieldCanvasProps>(
         orientation={orientation}
         ref={ref}
       >
+        {!showSetupHint && localMatchup?.triangles && (
+          <PassingTriangleOverlay triangles={localMatchup.triangles} orientation={orientation} fieldSize={fieldSize} />
+        )}
+        {!showSetupHint && localMatchup && !["1v0", "1v1"].includes(localMatchup.scenario) && (
+          <LocalMatchupOverlay matchup={localMatchup} orientation={orientation} />
+        )}
         {!showSetupHint && dynamicOpenSpaces.length > 0 && (
           <DynamicOpenSpaceOverlay
             openSpaces={dynamicOpenSpaces}

@@ -10,6 +10,8 @@ services:
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     restart: unless-stopped
+    volumes:
+      - solution-cache:/app/data/solution_cache
     init: true
     stop_grace_period: 30s
     security_opt:
@@ -21,3 +23,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  solution-cache:

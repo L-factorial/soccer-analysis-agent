@@ -1,4 +1,5 @@
 import { randomUUID } from "expo-crypto";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { AnalysisOverlay } from "../src/features/field-editor/AnalysisOverlay";
 import { colors } from "../src/theme/colors";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -25,6 +26,7 @@ import {
   analyzeFieldConfiguration,
   cancelAnalysis,
   generateCommentary,
+  getSharedSolution,
 } from "../src/api/analyze-field";
 import {
   animationFrameToSeconds,
@@ -32,11 +34,14 @@ import {
 } from "../src/features/animation-playback";
 import {
   AnimationResponse,
+  CommentaryLanguage,
+  CommentaryTrack,
   AlternativePlan,
   createFieldConfiguration,
   FIELD_LENGTH_CM,
   FIELD_WIDTH_CM,
   FieldFormat,
+  FieldConfiguration,
   FIELD_FORMATS,
   FieldOrientation,
   OpenSpaceType,
@@ -61,7 +66,14 @@ function alternativeResponse(plan: AlternativePlan): AnimationResponse {
     diagnostics: plan.diagnostics,
     phaseSnapshots: plan.phaseSnapshots,
     commentary: plan.commentary,
+    commentaryByLanguage: plan.commentaryByLanguage,
   };
+}
+
+function commentaryFor(plan: AnimationResponse | AlternativePlan | null | undefined, language: CommentaryLanguage): CommentaryTrack | undefined {
+  const track = plan?.commentaryByLanguage?.[language]
+    ?? ((plan?.commentary?.language ?? "en") === language ? plan?.commentary : undefined);
+  return language === "ne" && track?.script !== "devanagari" ? undefined : track;
 }
 
 type ChoiceButtonProps = {
@@ -167,6 +179,8 @@ function DraggablePlayer({
 }
 
 export default function HomeScreen() {
+  const { fieldHash, planId: urlPlanId } = useLocalSearchParams<{ fieldHash?: string; planId?: string }>();
+  const router = useRouter();
   const { width, height } = useWindowDimensions();
   const isWide = width >= 900;
   const fieldOrientation: FieldOrientation = isWide ? "horizontal" : "vertical";
@@ -187,6 +201,8 @@ export default function HomeScreen() {
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>("idle");
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [commentaryEnabled, setCommentaryEnabled] = useState(false);
+  const [commentaryLanguage, setCommentaryLanguage] = useState<CommentaryLanguage>("en");
+  const commentaryLanguageRef = useRef<CommentaryLanguage>("en");
   const commentaryEnabledRef = useRef(false);
   const commentaryAbortController = useRef<AbortController | null>(null);
   const [commentaryStatuses, setCommentaryStatuses] = useState<
@@ -204,6 +220,9 @@ export default function HomeScreen() {
   const fieldRef = useRef<View>(null);
   const activeAnalysisId = useRef<string | null>(null);
   const analysisAbortController = useRef<AbortController | null>(null);
+  const sharedLoadController = useRef<AbortController | null>(null);
+  const loadedHash = useRef<string | null>(null);
+  const restoredConfiguration = useRef<FieldConfiguration | null>(null);
   const selectedPlanIdRef = useRef("requested");
   const openSpaceSequence = useRef(1);
   const playerCount = Number.parseInt(fieldConfiguration.fieldType, 10);
@@ -288,6 +307,16 @@ export default function HomeScreen() {
   const selectedPlanLabel = selectedAlternative?.label ?? "Requested plan";
 
   useEffect(() => {
+    // Restoring a saved field and its result is one operation, not an edit.
+    if (restoredConfiguration.current === fieldConfiguration) {
+      restoredConfiguration.current = null;
+      return;
+    }
+    sharedLoadController.current?.abort();
+    if (loadedHash.current) {
+      loadedHash.current = null;
+      router.setParams({ fieldHash: undefined, planId: undefined });
+    }
     stopActiveAnalysis();
     commentaryAbortController.current?.abort();
     setAnalysisStatus("idle");
@@ -301,15 +330,70 @@ export default function HomeScreen() {
     setIsPlanSummaryExpanded(false);
   }, [fieldConfiguration]);
 
+  useEffect(() => {
+    if (!fieldHash || loadedHash.current === fieldHash) return;
+    const controller = new AbortController();
+    sharedLoadController.current = controller;
+    stopActiveAnalysis();
+    commentaryAbortController.current?.abort();
+    pause();
+    setAnalysisStatus("loading");
+    setAnalysisError(null);
+    setAnimationResponse({ duration: 0, events: [] });
+    setPrimaryPlanResponse(null);
+    getSharedSolution(fieldHash, controller.signal).then((saved) => {
+      if (controller.signal.aborted) return;
+      const field = saved.fieldSubmission.fieldConfiguration;
+      const configuration: FieldConfiguration = {
+        label: field.label, fieldType: field.fieldType, teams: field.teams,
+        goals: field.goals, ball: field.ball, openSpaces: field.openSpaces,
+        players: field.players.map((player) => ({ ...player, profileName: player.profileName ?? undefined })),
+      };
+      restoredConfiguration.current = configuration;
+      loadedHash.current = fieldHash;
+      setFieldConfiguration(configuration);
+      setTacticalInstruction(saved.fieldSubmission.tacticalInstruction ?? "");
+      setSelectedTeamId(configuration.teams[0].id);
+      setSetupHintDismissed(true);
+      setAnimationResponse(saved.animationResponse);
+      setPrimaryPlanResponse(saved.animationResponse);
+      selectedPlanIdRef.current = "requested";
+      setSelectedPlanId("requested");
+      setCommentaryStatuses(Object.fromEntries([
+        ["requested", commentaryFor(saved.animationResponse, commentaryLanguageRef.current) ? "ready" : "idle"],
+        ...(saved.animationResponse.alternativePlans ?? []).map((plan) => [plan.id, commentaryFor(plan, commentaryLanguageRef.current) ? "ready" : "idle"]),
+      ]) as Record<string, CommentaryStatus>);
+      setAnalysisStatus("success");
+    }).catch((error) => {
+      if (!controller.signal.aborted) {
+        setAnalysisError(error instanceof Error ? error.message : "Unable to load saved analysis.");
+        setAnalysisStatus("error");
+      }
+    });
+    return () => controller.abort();
+  }, [fieldHash]);
+
+  useEffect(() => {
+    if (!primaryPlanResponse) return;
+    const alternative = primaryPlanResponse.alternativePlans?.find((plan) => plan.id === urlPlanId);
+    const id = alternative?.id ?? "requested";
+    if (selectedPlanIdRef.current === id) return;
+    pause();
+    selectedPlanIdRef.current = id;
+    setSelectedPlanId(id);
+    setAnimationResponse(alternative ? alternativeResponse(alternative) : primaryPlanResponse);
+  }, [urlPlanId, primaryPlanResponse]);
+
   useEffect(
     () => () => {
       stopActiveAnalysis();
+      sharedLoadController.current?.abort();
       commentaryAbortController.current?.abort();
     },
     [],
   );
 
-  function startCommentary(response: AnimationResponse) {
+  function startCommentary(response: AnimationResponse, language = commentaryLanguageRef.current) {
     commentaryAbortController.current?.abort();
     const controller = new AbortController();
     commentaryAbortController.current = controller;
@@ -322,31 +406,34 @@ export default function HomeScreen() {
     ];
     setCommentaryStatuses(
       Object.fromEntries(commentaryPlans.map(({ id, response: plan }) =>
-        [id, plan.commentary ? "ready" : "loading"],
+        [id, commentaryFor(plan, language) ? "ready" : "loading"],
       )),
     );
     // Each selectable plan owns an independent asynchronous commentary
     // request. One failure never blocks simulation or the other plans.
     for (const commentaryPlan of commentaryPlans) {
-      if (commentaryPlan.response.commentary) continue;
+      if (commentaryFor(commentaryPlan.response, language)) continue;
       void generateCommentary(
         fieldConfiguration,
         commentaryPlan.response,
         true,
         tacticalInstruction,
         controller.signal,
+        response.fieldHash,
+        commentaryPlan.id,
+        language,
       )
         .then((commentary) => {
           if (controller.signal.aborted) return;
           setPrimaryPlanResponse((current) => {
             if (!current) return current;
             if (commentaryPlan.id === "requested") {
-              return { ...current, commentary };
+              return { ...current, commentaryByLanguage: { ...current.commentaryByLanguage, [language]: commentary } };
             }
             return {
               ...current,
               alternativePlans: current.alternativePlans?.map((plan) =>
-                plan.id === commentaryPlan.id ? { ...plan, commentary } : plan,
+                plan.id === commentaryPlan.id ? { ...plan, commentaryByLanguage: { ...plan.commentaryByLanguage, [language]: commentary } } : plan,
               ),
             };
           });
@@ -392,6 +479,9 @@ export default function HomeScreen() {
   }
 
   function cancelCurrentAnalysis() {
+    sharedLoadController.current?.abort();
+    loadedHash.current = null;
+    router.setParams({ fieldHash: undefined, planId: undefined });
     stopActiveAnalysis();
     commentaryAbortController.current?.abort();
     reset();
@@ -437,6 +527,10 @@ export default function HomeScreen() {
         setIsPlanDropdownOpen(false);
         setIsPlanSummaryExpanded(false);
         setAnalysisStatus("success");
+        if (response.fieldHash) {
+          loadedHash.current = response.fieldHash;
+          router.setParams({ fieldHash: response.fieldHash, planId: "requested" });
+        }
         if (commentaryEnabledRef.current) {
           startCommentary(response);
         }
@@ -458,6 +552,7 @@ export default function HomeScreen() {
     selectedPlanIdRef.current = id;
     setAnimationResponse(response);
     setSelectedPlanId(id);
+    if (primaryPlanResponse?.fieldHash) router.setParams({ planId: id });
     setIsPlanDropdownOpen(false);
     setIsPlanSummaryExpanded(false);
   }
@@ -944,7 +1039,7 @@ export default function HomeScreen() {
                 ]}
                 value={tacticalInstruction}
               />
-              {(analysisStatus !== "success" || commentaryEnabled) && <Pressable
+              {<Pressable
                 accessibilityRole="switch"
                 accessibilityLabel="Generate commentary"
                 accessibilityState={{ checked: commentaryEnabled }}
@@ -958,6 +1053,22 @@ export default function HomeScreen() {
                   Commentary: {commentaryEnabled ? "On" : "Off"}
                 </Text>
               </Pressable>}
+              {commentaryEnabled && (["en", "ne"] as const).map((language) => (
+                <Pressable key={language} accessibilityRole="button"
+                  accessibilityLabel={`${language === "en" ? "English" : "Nepali"} commentary`}
+                  accessibilityState={{ selected: commentaryLanguage === language }}
+                  style={[styles.commentaryToggle, commentaryLanguage === language && styles.commentaryToggleEnabled]}
+                  onPress={() => {
+                    if (commentaryLanguage === language) return;
+                    setCommentaryLanguage(language);
+                    commentaryLanguageRef.current = language;
+                    commentaryAbortController.current?.abort();
+                    setCommentaryStatuses({});
+                    if (primaryPlanResponse && analysisStatus === "success") startCommentary(primaryPlanResponse, language);
+                  }}>
+                  <Text style={styles.commentaryToggleText}>{language === "en" ? "English" : "Nepali"}</Text>
+                </Pressable>
+              ))}
               {!isPlaybackReady ? (
                 <Pressable
                   accessibilityRole="button"
@@ -1122,9 +1233,7 @@ export default function HomeScreen() {
                 <Text style={styles.resetButtonText}>New field</Text>
               </Pressable>
               {commentaryEnabled && <CommentaryPanel
-                commentary={selectedPlanId === "requested"
-                  ? primaryPlanResponse?.commentary
-                  : selectedAlternative?.commentary}
+                commentary={commentaryFor(selectedPlanId === "requested" ? primaryPlanResponse : selectedAlternative, commentaryLanguage)}
                 loading={commentaryStatuses[selectedPlanId] === "loading"}
                 playbackSeconds={playbackSeconds}
                 playbackStatus={session.status}
@@ -1299,6 +1408,7 @@ export default function HomeScreen() {
               attackingTeamId={animationResponse.diagnostics?.attackingTeamId}
               configuration={displayedConfiguration}
               dynamicOpenSpaces={visibleStandardOpenSpaces}
+              localMatchup={isPlaybackReady ? activePhaseSnapshot?.localMatchup : null}
               onBallMove={placeBall}
               onFieldPress={placeSelectedElement}
               onOpenSpaceMove={moveOpenSpace}
@@ -1333,6 +1443,7 @@ export default function HomeScreen() {
               orientation={width >= height ? "horizontal" : "vertical"}
               attackingTeamId={animationResponse.diagnostics?.attackingTeamId}
               dynamicOpenSpaces={visibleStandardOpenSpaces}
+              localMatchup={isPlaybackReady ? activePhaseSnapshot?.localMatchup : null}
               offsideReleaseLineX={offsideReleaseLineX}
             />
           </View>
@@ -1365,7 +1476,7 @@ const styles = StyleSheet.create({
   fullscreenControls: {
     ...StyleSheet.absoluteFill,
     pointerEvents: "box-none",
-    alignItems: "flex-end",
+    alignItems: "flex-start",
   },
   fullscreenCancel: {
     backgroundColor: "rgba(10, 30, 20, 0.12)",

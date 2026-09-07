@@ -1,6 +1,7 @@
 import json
 import logging
 from uuid import UUID, uuid4
+from typing import Literal
 
 from app.analysis_lifecycle import (
     AnalysisCancelled, DuplicateAnalysis, analysis_registry, check_analysis_cancelled,
@@ -27,6 +28,7 @@ from app.models.animation_response import (
 from app.models.field_submission import FieldSubmission
 from app.rate_limits import LimitExceeded, rate_limiter
 from app.scheduling import PhaseAnimationScheduler
+from app.solution_cache import configuration_hash, solution_cache
 from app.validation import FieldSubmissionValidationError, validate_field_submission
 
 router = APIRouter(prefix="/field-configurations", tags=["field configurations"])
@@ -81,9 +83,29 @@ class FieldSubmissionReceipt(BaseModel):
     field_submission: FieldSubmission = Field(serialization_alias="fieldSubmission")
 
 
+class SharedSolution(BaseModel):
+    field_submission: FieldSubmission = Field(serialization_alias="fieldSubmission")
+    animation_response: AnimationResponse = Field(serialization_alias="animationResponse")
+
+
+@router.get("/solutions/{field_hash}", response_model=SharedSolution)
+def get_shared_solution(field_hash: str, response: Response) -> SharedSolution:
+    response.headers["Cache-Control"] = "no-store"
+    if len(field_hash) != 64 or any(character not in "0123456789abcdef" for character in field_hash):
+        raise HTTPException(status_code=404, detail="Saved analysis not found.")
+    cached = solution_cache.get(field_hash)
+    if cached is None:
+        raise HTTPException(status_code=404, detail="This saved analysis is no longer available. The server keeps the 50 most recently used solutions.")
+    submission, animation = cached
+    return SharedSolution(field_submission=submission, animation_response=animation)
+
+
 class CommentaryRequest(BaseModel):
     """A completed simulation submitted independently for narration."""
     commentary_enabled: bool = Field(default=False, alias="commentaryEnabled", strict=True)
+    field_hash: str | None = Field(default=None, alias="fieldHash", pattern=r"^[0-9a-f]{64}$")
+    plan_id: str = Field(default="requested", alias="planId")
+    language: Literal["en", "ne"] = "en"
     field_submission: FieldSubmission = Field(alias="fieldSubmission")
     # This is the camelCase representation previously returned to the frontend,
     # not an internal AnimationResponse reconstructed from snake_case fields.
@@ -137,6 +159,10 @@ def _analyze_field_configuration(submission: FieldSubmission) -> AnimationRespon
     # Boundary validation rejects malformed soccer layouts before constructing
     # authoritative domain state.
     _validate_submission(submission)
+    field_hash = configuration_hash(submission)
+    cached = solution_cache.get(field_hash)
+    if cached is not None:
+        return cached[1]
     try:
         engine_plan = SoccerGameEngine().plan(
             build_initial_game_state(submission),
@@ -212,7 +238,9 @@ def _analyze_field_configuration(submission: FieldSubmission) -> AnimationRespon
         "Returning animation response to frontend: %s",
         json.dumps(animation_response.model_dump(by_alias=True)),
     )
-    return animation_response
+    check_analysis_cancelled()
+    animation_response = animation_response.model_copy(update={"field_hash": field_hash})
+    return solution_cache.put(field_hash, submission, animation_response)
 
 
 @router.post(
@@ -230,13 +258,34 @@ def create_commentary(request: CommentaryRequest) -> CommentaryTrack:
                 "message": "Enable commentary before requesting generation",
             },
         )
+    simulation = request.animation_response
+    submission = request.field_submission
+    if request.field_hash is not None:
+        saved = solution_cache.get(request.field_hash)
+        if saved is None:
+            raise HTTPException(status_code=404, detail="Saved analysis is no longer available.")
+        submission, response = saved
+        plan = response if request.plan_id == "requested" else next(
+            (plan for plan in response.alternative_plans if plan.id == request.plan_id), None
+        )
+        if plan is None:
+            raise HTTPException(status_code=404, detail="Saved plan not found.")
+        cached_track = plan.commentary_by_language.get(request.language)
+        if cached_track is None and plan.commentary is not None and plan.commentary.language == request.language:
+            cached_track = plan.commentary
+        if cached_track is not None:
+            if request.language != "ne" or cached_track.script == "devanagari":
+                return cached_track
+        # Narrate the authoritative saved plan, not a client-supplied timeline.
+        simulation = CommentarySimulationInput.model_validate(plan.model_dump(mode="json", by_alias=True))
     try:
         rate_limiter.reserve_commentary()
     except LimitExceeded as error:
         raise _limit_error(error) from error
     commentary = generate_commentary(
-        request.animation_response,
-        request.field_submission,
+        simulation,
+        submission,
+        **({"language": request.language} if request.language != "en" else {}),
     )
     if commentary is None:
         raise HTTPException(
@@ -246,6 +295,8 @@ def create_commentary(request: CommentaryRequest) -> CommentaryTrack:
                 "message": "Commentary is disabled, unconfigured, or could not be generated",
             },
         )
+    if request.field_hash is not None:
+        return solution_cache.save_commentary(request.field_hash, request.plan_id, commentary)
     return commentary
 
 

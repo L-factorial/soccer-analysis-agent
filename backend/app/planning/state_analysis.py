@@ -22,6 +22,7 @@ from app.analysis import (
     with_dynamic_open_spaces,
 )
 from app.domain import GameState
+from app.analysis.local_matchups import LocalMatchup, LocalMatchupPolicy, discover_local_matchup
 from app.transitions import ActionTransition, apply_action_candidate
 
 
@@ -34,6 +35,7 @@ class AnalysisPolicy:
     movement: MovementPolicy = MovementPolicy()
     passing: PassPolicy = PassPolicy()
     dynamic_spaces: DynamicSpacePolicy = DynamicSpacePolicy()
+    local_matchups: LocalMatchupPolicy = LocalMatchupPolicy()
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +58,7 @@ class AnalyzedGameState:
     target_zones_by_team: Mapping[str, Mapping[str, TargetZoneAnalysis]]
     action_candidates: ActionCandidateSet
     diagnostics: AnalysisDiagnostics
+    local_matchup: LocalMatchup | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +109,7 @@ def analyze_game_state(
         player_contexts=player_contexts,
         target_zones_by_team=target_zones_by_team,
         action_candidates=candidates,
+        local_matchup=discover_local_matchup(resolved_state, policy.local_matchups, policy.passing),
         diagnostics=AnalysisDiagnostics(
             player_count=len(resolved_state.players_by_id),
             team_count=len(resolved_state.teams_by_id),

@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from itertools import combinations, permutations
 
-from app.analysis import ActionType
+from app.analysis import ActionCandidate, ActionType
+from app.analysis.local_matchups import LocalMatchupPolicy
+from app.phases.support_runs import SupportRunPolicy, local_support_variants
 from app.domain import (
     AttackingDirection,
     GameState,
@@ -34,6 +36,7 @@ class PhaseGenerationPolicy:
     degrees, and reaction/start offsets are seconds.
     """
     maximum_phases: int = 50
+    support_runs: SupportRunPolicy = SupportRunPolicy()
     support_offset_cm: float = 900
     wide_run_offset_cm: float = 1200
     maximum_dynamic_support_spaces: int = 1
@@ -482,11 +485,15 @@ def _available_shape_lanes(
 def _complete_attacking_shape(
     state: GameState,
     teammates: tuple[PlayerState, ...],
-    primary_player_ids: set[str],
+    primary_action: ActionCandidate,
     intentions: tuple[AttackingIntention, ...],
     action_target: Vector2,
     policy: PhaseGenerationPolicy,
 ) -> tuple[AttackingIntention, ...]:
+    teammates = tuple(player for player in teammates if not is_goalkeeper(player))
+    primary_player_ids = {primary_action.actor_id}
+    if primary_action.receiver_id:
+        primary_player_ids.add(primary_action.receiver_id)
     assigned = {
         *primary_player_ids,
         *(intention.player_id for intention in intentions),
@@ -500,14 +507,33 @@ def _complete_attacking_shape(
         if attacker.id not in assigned
         and not is_goalkeeper(attacker)
     )
-    occupied_targets = (
-        action_target,
-        *(intention.target for intention in intentions),
+    # Reserve one slot per assigned outfield player. Passers and shooters stay
+    # at their own positions; only dribblers and receivers follow the ball.
+    # A receiving run overrides its player's position instead of reserving a
+    # second slot at the ball destination.
+    occupied_by_player = {
+        player.id: (
+            action_target
+            if player.id == primary_action.receiver_id
+            or (
+                player.id == primary_action.actor_id
+                and primary_action.action_type == ActionType.MOVE_WITH_BALL
+            )
+            else player.position
+        )
+        for player in teammates
+        if player.id in primary_player_ids
+    }
+    outfield_ids = {player.id for player in teammates}
+    occupied_by_player.update(
+        (intention.player_id, intention.target)
+        for intention in intentions
+        if intention.player_id in outfield_ids
     )
     lanes = _available_shape_lanes(
         state,
         len(teammates),
-        tuple(occupied_targets),
+        tuple(occupied_by_player.values()),
     )
     # Both collections are laterally ordered, preserving the team's left-to-right
     # shape instead of making every player chase the same central anchor.
@@ -799,7 +825,7 @@ def _shot_attacking_intentions(
     return tuple(intentions)
 
 
-def generate_tactical_phases(
+def _generate_base_tactical_phases(
     state: GameState,
     feasible_actions: tuple,
     policy: PhaseGenerationPolicy = PhaseGenerationPolicy(),
@@ -1101,7 +1127,7 @@ def generate_tactical_phases(
                 phase_attacking = _complete_attacking_shape(
                     state,
                     teammates,
-                    excluded_attackers,
+                    action,
                     variant_attacking,
                     action.destination,
                     policy,
@@ -1134,3 +1160,43 @@ def generate_tactical_phases(
                     deferred_variants.append(generated_phase)
     remaining = max(0, policy.maximum_phases - len(phases))
     return tuple((*phases, *deferred_variants[:remaining]))
+
+
+def generate_tactical_phases(
+    state: GameState,
+    feasible_actions: tuple,
+    policy: PhaseGenerationPolicy = PhaseGenerationPolicy(),
+    matchup_policy: LocalMatchupPolicy = LocalMatchupPolicy(),
+) -> tuple[TacticalPhase, ...]:
+    """Retain normal tactical plans alongside a bounded set of local support runs."""
+    base = _generate_base_tactical_phases(state, feasible_actions, policy)
+    budget = int(policy.maximum_phases * policy.support_runs.maximum_variant_fraction)
+    if budget == 0:
+        return base
+    # Round-robin across ball-action types so passes cannot consume every slot
+    # before dribble support is considered. Paired support gets first choice.
+    groups = {}
+    seen_actions = set()
+    for phase in base:
+        action = phase.primary_action
+        if action.id in seen_actions:
+            continue
+        seen_actions.add(action.id)
+        variants = local_support_variants(state, phase, matchup_policy, policy.support_runs)
+        if variants:
+            groups.setdefault(action.action_type, []).extend(reversed(variants))
+    extras = []
+    while len(extras) < budget and any(groups.values()):
+        for group in groups.values():
+            if group and len(extras) < budget:
+                extras.append(group.pop(0))
+    # Keep terminal shot options when reserving capacity for support alternatives.
+    retained = list(base)
+    while len(retained) + len(extras) > policy.maximum_phases:
+        removable = next((i for i in range(len(retained) - 1, -1, -1)
+                          if retained[i].primary_action.action_type != ActionType.SHOT), None)
+        if removable is None:
+            extras.pop()
+        else:
+            retained.pop(removable)
+    return tuple((*retained, *extras))
