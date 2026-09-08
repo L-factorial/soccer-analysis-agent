@@ -7,6 +7,7 @@ type CommentaryPanelProps = {
   commentary?: CommentaryTrack;
   playbackSeconds: number;
   playbackStatus: AnimationStatus;
+  onNarrationActiveChange: (active: boolean) => void;
 };
 
 function preferredBroadcastVoice(): SpeechSynthesisVoice | undefined {
@@ -48,8 +49,20 @@ export function CommentaryPanel({
   commentary,
   playbackSeconds,
   playbackStatus,
+  onNarrationActiveChange,
 }: CommentaryPanelProps) {
   const narrationStarted = useRef(false);
+  const activeUtterance = useRef<SpeechSynthesisUtterance | null>(null);
+  const stopNarration = () => {
+    const utterance = activeUtterance.current;
+    if (utterance) {
+      utterance.onend = null;
+      utterance.onerror = null;
+      activeUtterance.current = null;
+    }
+    if (speechAvailable) globalThis.speechSynthesis.cancel();
+    onNarrationActiveChange(false);
+  };
   const [voiceRevision, setVoiceRevision] = useState(0);
   const speechAvailable =
     Platform.OS === "web" &&
@@ -65,7 +78,7 @@ export function CommentaryPanel({
 
   useEffect(() => {
     narrationStarted.current = false;
-    if (speechAvailable) globalThis.speechSynthesis.cancel();
+    stopNarration();
   }, [commentary, speechAvailable]);
 
   useEffect(() => {
@@ -100,17 +113,30 @@ export function CommentaryPanel({
     utterance.rate = 1;
     utterance.pitch = 0.94;
     utterance.volume = 1;
-    globalThis.speechSynthesis.speak(utterance);
+    activeUtterance.current = utterance;
+    const finish = () => {
+      if (activeUtterance.current !== utterance) return;
+      activeUtterance.current = null;
+      onNarrationActiveChange(false);
+    };
+    utterance.onend = finish;
+    utterance.onerror = finish;
+    onNarrationActiveChange(true);
+    try {
+      globalThis.speechSynthesis.speak(utterance);
+    } catch {
+      finish();
+    }
   }, [commentary, playbackSeconds, playbackStatus, speechAvailable, voiceRevision]);
 
   useEffect(() => {
     // A user Pause or Reset is an explicit stop. Natural completion is not:
-    // allow the last utterance a brief grace period beyond the animation end.
+    // allow narration to finish while the final animation frame stays visible.
     if (
       (playbackStatus === "paused" || playbackStatus === "idle") &&
       speechAvailable
     ) {
-      globalThis.speechSynthesis.cancel();
+      stopNarration();
       narrationStarted.current = false;
     }
     if (playbackStatus === "completed") {
@@ -121,9 +147,7 @@ export function CommentaryPanel({
 
   useEffect(
     () => () => {
-      if (speechAvailable) {
-        globalThis.speechSynthesis.cancel();
-      }
+      stopNarration();
     },
     [speechAvailable],
   );

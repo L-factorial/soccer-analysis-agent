@@ -240,6 +240,35 @@ export default function HomeScreen() {
     animationResponse,
     playbackSpeed,
   );
+  const [fullscreenPhase, setFullscreenPhase] = useState<
+    "closed" | "opening" | "preparing" | "playing"
+  >("closed");
+  const [narrationActive, setNarrationActive] = useState(false);
+
+  const startFullscreenPlayback = () => {
+    if (session.status === "completed") reset();
+    setFullscreenPhase("opening");
+  };
+  const cancelFullscreenPlayback = () => {
+    setFullscreenPhase("closed");
+    pause();
+  };
+
+  useEffect(() => {
+    if (fullscreenPhase !== "preparing") return;
+    const timer = setTimeout(() => {
+      setFullscreenPhase("playing");
+      play();
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [fullscreenPhase, play]);
+
+  useEffect(() => {
+    if (fullscreenPhase !== "playing" || session.status !== "completed" || narrationActive) return;
+    const timer = setTimeout(() => setFullscreenPhase("closed"), 1000);
+    return () => clearTimeout(timer);
+  }, [fullscreenPhase, session.status, narrationActive]);
+
   const displayedConfiguration = useMemo(() => {
     const profileNames = new Map(
       fieldConfiguration.players.map((player) => [player.id, player.profileName]),
@@ -1193,7 +1222,7 @@ export default function HomeScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityHint="Start or resume the selected animation"
-                onPress={play}
+                onPress={startFullscreenPlayback}
                 style={styles.playbackButton}
               >
                 <Text style={styles.playbackButtonText}>Play</Text>
@@ -1214,6 +1243,7 @@ export default function HomeScreen() {
                 commentary={selectedPlanId === "requested" ? primaryPlanResponse?.commentary : selectedAlternative?.commentary}
                 playbackSeconds={playbackSeconds}
                 playbackStatus={session.status}
+                onNarrationActiveChange={setNarrationActive}
               />}
                 </>
               )}
@@ -1407,10 +1437,11 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
       <Modal
-        visible={session.status === "playing"}
+        visible={fullscreenPhase !== "closed"}
+        onShow={() => setFullscreenPhase((phase) => phase === "opening" ? "preparing" : phase)}
         animationType="none"
         presentationStyle="fullScreen"
-        onRequestClose={pause}
+        onRequestClose={cancelFullscreenPlayback}
       >
         <View style={styles.fullscreenPlayback}>
           <View style={styles.fullscreenPitch}>
@@ -1428,7 +1459,7 @@ export default function HomeScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Cancel full-screen playback"
-              onPress={pause}
+              onPress={cancelFullscreenPlayback}
               hitSlop={8}
               style={({ pressed }) => [
                 styles.fullscreenCancel,
