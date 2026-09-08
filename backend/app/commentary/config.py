@@ -26,20 +26,14 @@ def _load_backend_environment() -> None:
 _load_backend_environment()
 
 
-def _enabled(value: str | None) -> bool:
-    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
-
-
 @dataclass(frozen=True)
 class CommentaryConfig:
-    enabled: bool
     model: str
     timeout_seconds: float
 
     @classmethod
     def from_environment(cls) -> "CommentaryConfig":
         return cls(
-            enabled=_enabled(os.getenv("SOCCER_COMMENTARY_ENABLED")),
             model=os.getenv("SOCCER_COMMENTARY_MODEL", "gpt-5.6-luna"),
             timeout_seconds=float(
                 os.getenv("SOCCER_COMMENTARY_TIMEOUT_SECONDS", "15")

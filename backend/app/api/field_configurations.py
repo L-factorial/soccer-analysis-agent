@@ -287,7 +287,7 @@ def create_commentary(request: CommentaryRequest) -> CommentaryTrack:
             status_code=503,
             detail={
                 "code": "commentary_unavailable",
-                "message": "Commentary is disabled, unconfigured, or could not be generated",
+                "message": "Commentary is unconfigured or could not be generated",
             },
         )
     if request.field_hash is not None:

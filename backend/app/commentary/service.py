@@ -61,7 +61,7 @@ def generate_commentary(
 ) -> CommentaryTrack | None:
     """Generate a read-only track or return ``None`` when unavailable."""
     config = CommentaryConfig.from_environment()
-    if not config.enabled or not os.getenv("OPENAI_API_KEY"):
+    if not os.getenv("OPENAI_API_KEY"):
         return None
 
     phases = response.diagnostics.selected_phases if response.diagnostics else ()

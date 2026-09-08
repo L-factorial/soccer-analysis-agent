@@ -100,9 +100,11 @@ class CommentaryTests(unittest.TestCase):
         self.assertIs(create_commentary(request), generate.return_value)
         generate.assert_called_once_with(request.animation_response, request.field_submission)
 
-    @patch.dict(os.environ, {"SOCCER_COMMENTARY_ENABLED": "false"}, clear=False)
-    def test_disabled_commentary_returns_original_response(self) -> None:
+    @patch.dict(os.environ, {"OPENAI_API_KEY": ""}, clear=False)
+    @patch("app.commentary.service.OpenAI")
+    def test_missing_api_key_skips_generation(self, client: Mock) -> None:
         self.assertIsNone(generate_commentary(_commentary_input(), self.submission))
+        client.assert_not_called()
 
     def test_request_accepts_camel_case_animation_returned_by_frontend(self) -> None:
         request = CommentaryRequest.model_validate(
@@ -118,7 +120,7 @@ class CommentaryTests(unittest.TestCase):
 
     @patch.dict(
         os.environ,
-        {"SOCCER_COMMENTARY_ENABLED": "true", "OPENAI_API_KEY": "test-key"},
+        {"SOCCER_COMMENTARY_ENABLED": "false", "OPENAI_API_KEY": "test-key"},
         clear=False,
     )
     @patch("app.commentary.service.OpenAI")

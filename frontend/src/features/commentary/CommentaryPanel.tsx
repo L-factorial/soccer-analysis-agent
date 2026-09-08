@@ -1,12 +1,10 @@
-import { colors } from "../../theme/colors";
 import { useEffect, useRef, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform } from "react-native";
 
 import { AnimationStatus, CommentaryTrack } from "../../models";
 
 type CommentaryPanelProps = {
   commentary?: CommentaryTrack;
-  loading?: boolean;
   playbackSeconds: number;
   playbackStatus: AnimationStatus;
 };
@@ -48,12 +46,10 @@ function preferredBroadcastVoice(): SpeechSynthesisVoice | undefined {
  */
 export function CommentaryPanel({
   commentary,
-  loading = false,
   playbackSeconds,
   playbackStatus,
 }: CommentaryPanelProps) {
   const narrationStarted = useRef(false);
-  const [showTooltip, setShowTooltip] = useState(false);
   const [voiceRevision, setVoiceRevision] = useState(0);
   const speechAvailable =
     Platform.OS === "web" &&
@@ -65,9 +61,7 @@ export function CommentaryPanel({
     globalThis.speechSynthesis.addEventListener("voiceschanged", update);
     return () => globalThis.speechSynthesis.removeEventListener("voiceschanged", update);
   }, [speechAvailable]);
-  const activeCue = commentary?.cues.find(
-    (cue) => playbackSeconds >= cue.startTime && playbackSeconds < cue.endTime,
-  );
+
 
   useEffect(() => {
     narrationStarted.current = false;
@@ -134,69 +128,6 @@ export function CommentaryPanel({
     [speechAvailable],
   );
 
-  if (!commentary && !loading) {
-    return null;
-  }
-
-  return (
-    <View style={styles.anchor}>
-      <Pressable
-        accessibilityLabel="Commentary status"
-        onHoverIn={() => setShowTooltip(true)}
-        onHoverOut={() => setShowTooltip(false)}
-        onPress={() => setShowTooltip((visible) => !visible)}
-        style={[styles.badge, commentary && styles.badgeReady]}
-      >
-        <Text style={[styles.badgeText, commentary && styles.badgeTextReady]}>
-          {loading ? "Commentary …" : "Commentary ✓"}
-        </Text>
-      </Pressable>
-      {showTooltip && commentary && (
-        <View style={[styles.tooltip, { pointerEvents: "none" }]}>
-          <Text style={styles.eyebrow}>AI MATCH COMMENTARY · READY</Text>
-          <Text style={styles.title}>{commentary.title}</Text>
-          <Text style={styles.summary}>{commentary.summary}</Text>
-          {activeCue && <Text style={styles.activeCue}>{activeCue.text}</Text>}
-          {!speechAvailable && (
-            <Text style={styles.note}>Spoken commentary is currently available on web.</Text>
-          )}
-        </View>
-      )}
-    </View>
-  );
+  // Narration stays mounted without a duplicate visible status control.
+  return null;
 }
-
-const styles = StyleSheet.create({
-  anchor: { position: "relative", zIndex: 40 },
-  badge: {
-    borderColor: colors.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-  },
-  badgeReady: { backgroundColor: colors.accentSoft, borderColor: colors.accentBorder },
-  badgeText: { color: colors.muted, fontSize: 10, fontWeight: "800" },
-  badgeTextReady: { color: colors.success },
-  tooltip: {
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    gap: 6,
-    padding: 12,
-    position: "absolute",
-    right: 0,
-    top: 38,
-    width: 340,
-    zIndex: 100,
-  },
-  eyebrow: {
-    color: colors.accent,
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 1.2,
-  },
-  title: { color: colors.onPrimary, fontSize: 15, fontWeight: "800", marginTop: 2 },
-  summary: { color: "#C7D3CC", fontSize: 11, lineHeight: 16 },
-  activeCue: { color: colors.onPrimary, fontSize: 14, fontWeight: "600", lineHeight: 20 },
-  note: { color: "#94A39B", fontSize: 10 },
-});

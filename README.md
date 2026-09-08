@@ -147,14 +147,16 @@ weights without allowing an external model to control simulation decisions.
 The completed, scheduled plan can optionally be sent to an OpenAI model for
 phase-aligned commentary. This post-processing cannot change the plan and fails
 open: analysis still returns normally if commentary generation is disabled or
-fails. Copy `backend/.env.example` to `backend/.env`, add the API key, and set:
+fails. Copy `backend/.env.example` to `backend/.env` and add the API key:
 
 ```dotenv
-SOCCER_COMMENTARY_ENABLED=true
 OPENAI_API_KEY=your-key
 ```
 
-Restart the backend after changing these settings. Analysis returns the
+Restart the backend after changing provider settings. Commentary is off by
+default; enable it with the UI toggle. The endpoint requires
+`commentaryEnabled: true` for generation. The old `SOCCER_COMMENTARY_ENABLED`
+environment setting is ignored. Analysis returns the
 simulation first while a second request generates commentary. Commentary arriving
 during playback joins from the current phase without resetting the animation.
 Narration uses normal speaking speed at every animation playback speed; it may
@@ -208,6 +210,21 @@ input, Analyze/Play/Reset controls, a selector for alternative plans, animation
 playback, phase diagnostics, and asynchronous commentary status. Hovering over
 the commentary indicator displays the generated text without reducing the
 available field area.
+
+### Sharing an analysis
+
+After analysis, choose a plan and select **Share result**, then **Copy link**.
+To include narration, enable commentary and wait for the selected plan's
+commentary to finish first. Recipients open the saved field and selected plan;
+links with saved commentary enable narration for playback without generating
+new commentary or rerunning analysis. Press **Play** to begin playback.
+
+Shared results use the existing persistent 50-solution LRU cache. A link becomes
+unavailable when its result is evicted or the cache is cleared. Anyone with the
+link can view the saved configuration, including player names and commentary.
+On web, links use the current website address and preserve its deployment path.
+Native builds need `EXPO_PUBLIC_WEB_URL` set to the deployed website URL to
+create browser links; spoken commentary currently uses browser speech synthesis.
 
 ### Field coordinate system
 

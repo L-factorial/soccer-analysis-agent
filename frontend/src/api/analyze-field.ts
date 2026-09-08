@@ -72,6 +72,7 @@ export async function generateCommentary(
   if (!commentaryEnabled) {
     throw new Error("Enable commentary before requesting generation.");
   }
+  if (signal?.aborted) throw new Error("Commentary request was cancelled.");
   const response = await fetch(
     `${API_BASE_URL}/api/v1/field-configurations/commentary`,
     {

@@ -21,7 +21,9 @@ import {
 
 import { FieldCanvas } from "../src/features/field-editor";
 import { AnalysisMetricsDisplay } from "../src/features/field-editor/AnalysisMetricsDisplay";
+import { ShareResultButton } from "../src/features/field-editor/ShareResultButton";
 import { CommentaryPanel } from "../src/features/commentary";
+import { runCommentaryQueue } from "../src/features/commentary/generation-queue";
 import {
   analyzeFieldConfiguration,
   cancelAnalysis,
@@ -170,7 +172,7 @@ function DraggablePlayer({
 }
 
 export default function HomeScreen() {
-  const { fieldHash, planId: urlPlanId } = useLocalSearchParams<{ fieldHash?: string; planId?: string }>();
+  const { fieldHash, planId: urlPlanId, narration } = useLocalSearchParams<{ fieldHash?: string; planId?: string; narration?: string }>();
   const router = useRouter();
   const { width, height } = useWindowDimensions();
   const isWide = width >= 900;
@@ -295,6 +297,12 @@ export default function HomeScreen() {
   );
   const selectedPlanLabel = selectedAlternative?.label ?? "Requested plan";
 
+  function planCommentaryStatus(id: string): CommentaryStatus {
+    const plan = id === "requested" ? primaryPlanResponse
+      : primaryPlanResponse?.alternativePlans?.find((item) => item.id === id);
+    return plan?.commentary ? "ready" : commentaryStatuses[id] ?? "idle";
+  }
+
   useEffect(() => {
     // Restoring a saved field and its result is one operation, not an edit.
     if (restoredConfiguration.current === fieldConfiguration) {
@@ -346,6 +354,10 @@ export default function HomeScreen() {
       setSetupHintDismissed(true);
       setAnimationResponse(saved.animationResponse);
       setPrimaryPlanResponse(saved.animationResponse);
+      // Opening a share link plays saved narration only; it never generates more.
+      const enableSavedNarration = narration === "1";
+      commentaryEnabledRef.current = enableSavedNarration;
+      setCommentaryEnabled(enableSavedNarration);
       selectedPlanIdRef.current = "requested";
       setSelectedPlanId("requested");
       setCommentaryStatuses(Object.fromEntries([
@@ -383,6 +395,7 @@ export default function HomeScreen() {
   );
 
   function startCommentary(response: AnimationResponse) {
+    if (!commentaryEnabledRef.current) return;
     commentaryAbortController.current?.abort();
     const controller = new AbortController();
     commentaryAbortController.current = controller;
@@ -398,21 +411,20 @@ export default function HomeScreen() {
         [id, plan.commentary ? "ready" : "loading"],
       )),
     );
-    // Each selectable plan owns an independent asynchronous commentary
-    // request. One failure never blocks simulation or the other plans.
-    for (const commentaryPlan of commentaryPlans) {
-      if (commentaryPlan.response.commentary) continue;
-      void generateCommentary(
+    // Queue alternatives so switching Off prevents the next provider request.
+    void runCommentaryQueue(commentaryPlans.filter((plan) => !plan.response.commentary), {
+      enabled: () => commentaryEnabledRef.current,
+      signal: controller.signal,
+      generate: (commentaryPlan) => generateCommentary(
         fieldConfiguration,
         commentaryPlan.response,
-        true,
+        commentaryEnabledRef.current,
         tacticalInstruction,
         controller.signal,
         response.fieldHash,
         commentaryPlan.id,
-      )
-        .then((commentary) => {
-          if (controller.signal.aborted) return;
+      ),
+      onReady: (commentaryPlan, commentary) => {
           setPrimaryPlanResponse((current) => {
             if (!current) return current;
             if (commentaryPlan.id === "requested") {
@@ -431,16 +443,14 @@ export default function HomeScreen() {
             ...current,
             [commentaryPlan.id]: "ready",
           }));
-        })
-        .catch(() => {
-          if (!controller.signal.aborted) {
-            setCommentaryStatuses((current) => ({
-              ...current,
-              [commentaryPlan.id]: "unavailable",
-            }));
-          }
-        });
-    }
+      },
+      onError: (commentaryPlan) => {
+        setCommentaryStatuses((current) => ({
+          ...current,
+          [commentaryPlan.id]: "unavailable",
+        }));
+      },
+    });
   }
 
   function toggleCommentary() {
@@ -1056,11 +1066,11 @@ export default function HomeScreen() {
                 </Pressable>
               ) : (
                 <>
-              {primaryPlanResponse &&
-                (primaryPlanResponse.alternativePlans?.length ?? 0) > 0 && (
+              {primaryPlanResponse && (
                   <View style={styles.headerPlanSelector}>
                     <Pressable
                       accessibilityRole="button"
+                      accessibilityLabel={`Select analysis plan: ${selectedPlanLabel}`}
                       accessibilityState={{ expanded: isPlanDropdownOpen }}
                       onPress={() => setIsPlanDropdownOpen((open) => !open)}
                       style={styles.headerPlanButton}
@@ -1069,13 +1079,13 @@ export default function HomeScreen() {
                       <Text
                         style={[
                           styles.commentaryIndicator,
-                          commentaryStatuses[selectedPlanId] === "ready" &&
+                          planCommentaryStatus(selectedPlanId) === "ready" &&
                             styles.commentaryIndicatorReady,
                         ]}
                       >
-                        {commentaryStatuses[selectedPlanId] === "loading"
+                        {planCommentaryStatus(selectedPlanId) === "loading"
                           ? "…"
-                          : commentaryStatuses[selectedPlanId] === "ready"
+                          : planCommentaryStatus(selectedPlanId) === "ready"
                             ? "✓"
                             : ""}
                       </Text>
@@ -1100,15 +1110,15 @@ export default function HomeScreen() {
                             <Text
                               style={[
                                 styles.commentaryIndicator,
-                                commentaryStatuses.requested === "ready" &&
+                                planCommentaryStatus("requested") === "ready" &&
                                   styles.commentaryIndicatorReady,
                               ]}
                             >
-                              {commentaryStatuses.requested === "loading"
+                              {planCommentaryStatus("requested") === "loading"
                                 ? "Loading…"
-                                : commentaryStatuses.requested === "ready"
+                                : planCommentaryStatus("requested") === "ready"
                                   ? "✓"
-                                  : commentaryStatuses.requested === "unavailable"
+                                  : planCommentaryStatus("requested") === "unavailable"
                                     ? "—"
                                     : ""}
                             </Text>
@@ -1131,15 +1141,15 @@ export default function HomeScreen() {
                               <Text
                                 style={[
                                   styles.commentaryIndicator,
-                                  commentaryStatuses[plan.id] === "ready" &&
+                                  planCommentaryStatus(plan.id) === "ready" &&
                                     styles.commentaryIndicatorReady,
                                 ]}
                               >
-                                {commentaryStatuses[plan.id] === "loading"
+                                {planCommentaryStatus(plan.id) === "loading"
                                   ? "Loading…"
-                                  : commentaryStatuses[plan.id] === "ready"
+                                  : planCommentaryStatus(plan.id) === "ready"
                                     ? "✓"
-                                    : commentaryStatuses[plan.id] === "unavailable"
+                                    : planCommentaryStatus(plan.id) === "unavailable"
                                       ? "—"
                                       : ""}
                               </Text>
@@ -1182,19 +1192,11 @@ export default function HomeScreen() {
               </Text>
               <Pressable
                 accessibilityRole="button"
-                onPress={session.status === "playing" ? pause : play}
+                accessibilityHint="Start or resume the selected animation"
+                onPress={play}
                 style={styles.playbackButton}
               >
-                <Text style={styles.playbackButtonText}>
-                  {session.status === "playing" ? "Pause" : "Play"}
-                </Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={reset}
-                style={styles.resetButton}
-              >
-                <Text style={styles.resetButtonText}>Replay</Text>
+                <Text style={styles.playbackButtonText}>Play</Text>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
@@ -1204,9 +1206,13 @@ export default function HomeScreen() {
               >
                 <Text style={styles.resetButtonText}>New field</Text>
               </Pressable>
+              <ShareResultButton
+                fieldHash={primaryPlanResponse?.fieldHash}
+                planId={selectedPlanId}
+                commentaryLoading={commentaryStatuses[selectedPlanId] === "loading"}
+              />
               {commentaryEnabled && <CommentaryPanel
                 commentary={selectedPlanId === "requested" ? primaryPlanResponse?.commentary : selectedAlternative?.commentary}
-                loading={commentaryStatuses[selectedPlanId] === "loading"}
                 playbackSeconds={playbackSeconds}
                 playbackStatus={session.status}
               />}

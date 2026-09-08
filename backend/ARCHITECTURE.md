@@ -813,16 +813,19 @@ unless a field explicitly states otherwise.
 The commentary integration is deliberately downstream from planning and
 scheduling. The analyze response returns without waiting. The frontend then
 sends the completed animation to the independent commentary endpoint. When
-`SOCCER_COMMENTARY_ENABLED=true`, selected-phase facts are sent to a language
+the UI toggle is enabled and the request includes `commentaryEnabled: true`,
+selected-phase facts are sent to a language
 model. Structured output supplies
 prose keyed by existing phase IDs; the backend then attaches scheduler-owned
 timestamps and ignores unknown or duplicate IDs. Any provider error returns the
 original animation unchanged.
 
-The frontend starts one independent commentary request for the primary plan and
-each returned alternative. Per-plan loading/ready state is shown inside the
-header plan selector. Commentary copy is rendered as a hover/click tooltip so
-it overlays the workspace instead of reducing the field's available height.
+The frontend queues commentary requests for the primary plan and each returned
+alternative, checking the UI opt-in before each request. Switching Off cancels
+the browser request and prevents queued requests from starting; a provider call
+already accepted by the backend may still complete. Per-plan loading/ready state is shown inside the
+header plan selector. The commentary playback component renders no visible
+control; the UI toggle controls narration and the plan selector shows readiness.
 
 The prototype is isolated in `app/commentary/` and its independent API endpoint.
 Removing that package, endpoint, optional response field, and the frontend
