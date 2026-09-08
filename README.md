@@ -213,11 +213,13 @@ available field area.
 
 ### Sharing an analysis
 
-After analysis, choose a plan and select **Share result**, then **Copy link**.
-To include narration, enable commentary and wait for the selected plan's
-commentary to finish first. Recipients open the saved field and selected plan;
-links with saved commentary enable narration for playback without generating
-new commentary or rerunning analysis. Press **Play** to begin playback.
+After analysis, select **Share result**, then **Copy link**. The link shares the
+entire field hash, including the requested plan and all saved alternatives.
+Recipients start with the requested plan and can choose any alternative from
+the plan selector. To include narration, enable commentary and wait for all
+queued plans to finish first. If any plan has saved commentary, the link enables
+narration for playback without generating new commentary or rerunning analysis.
+Commentary plays where available for the chosen plan. Press **Play** to begin playback.
 
 Shared results use the existing persistent 50-solution LRU cache. A link becomes
 unavailable when its result is evicted or the cache is cleared. Anyone with the

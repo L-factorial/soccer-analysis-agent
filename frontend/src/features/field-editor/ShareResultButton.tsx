@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Modal, Platform, Pressable, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { getSharedSolution } from "../../api/analyze-field";
 
-export function ShareResultButton({ fieldHash, planId, commentaryLoading }: {
+export function ShareResultButton({ fieldHash, commentaryLoading }: {
   fieldHash?: string | null;
-  planId: string;
   commentaryLoading: boolean;
 }) {
   const [visible, setVisible] = useState(false);
@@ -15,7 +14,7 @@ export function ShareResultButton({ fieldHash, planId, commentaryLoading }: {
   useEffect(() => {
     setVisible(false);
     return () => request.current?.abort();
-  }, [fieldHash, planId]);
+  }, [fieldHash]);
 
   async function prepareLink() {
     if (!fieldHash) return;
@@ -29,22 +28,20 @@ export function ShareResultButton({ fieldHash, planId, commentaryLoading }: {
     const timeout = setTimeout(() => controller.abort(), 10000);
     try {
       const saved = await getSharedSolution(fieldHash, controller.signal);
-      const plan = planId === "requested" ? saved.animationResponse
-        : saved.animationResponse.alternativePlans?.find((item) => item.id === planId);
-      if (!plan) throw new Error("This plan is no longer available. Please select another plan.");
+      const plans = [saved.animationResponse, ...(saved.animationResponse.alternativePlans ?? [])];
+      const hasCommentary = plans.some((plan) => !!plan.commentary);
       const base = Platform.OS === "web" ? window.location.href : process.env.EXPO_PUBLIC_WEB_URL;
       if (!base) throw new Error("Sharing needs the website address configured for this app.");
       const link = new URL(base);
       link.search = "";
       link.hash = "";
       link.searchParams.set("fieldHash", fieldHash);
-      link.searchParams.set("planId", planId);
-      if (plan.commentary) link.searchParams.set("narration", "1");
+      if (hasCommentary) link.searchParams.set("narration", "1");
       if (request.current !== controller) return;
       setUrl(link.toString());
-      setMessage(plan.commentary
-        ? "Includes saved commentary. Press Play after opening the link to hear it."
-        : "Shares the animation. Enable commentary and wait for it to finish before sharing with narration.");
+      setMessage(hasCommentary
+        ? "Includes the requested plan and all alternatives, with commentary where saved. Choose a plan and press Play to hear it."
+        : "Includes the requested plan and all alternatives. Choose a plan and press Play. Enable commentary before sharing to include narration.");
     } catch (error) {
       if (request.current === controller) setMessage(controller.signal.aborted
         ? "Could not load the saved result. Please try again."

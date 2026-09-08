@@ -1208,8 +1208,7 @@ export default function HomeScreen() {
               </Pressable>
               <ShareResultButton
                 fieldHash={primaryPlanResponse?.fieldHash}
-                planId={selectedPlanId}
-                commentaryLoading={commentaryStatuses[selectedPlanId] === "loading"}
+                commentaryLoading={Object.values(commentaryStatuses).some((status) => status === "loading")}
               />
               {commentaryEnabled && <CommentaryPanel
                 commentary={selectedPlanId === "requested" ? primaryPlanResponse?.commentary : selectedAlternative?.commentary}
